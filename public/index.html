@@ -1899,6 +1899,7 @@ body{
           <div class="email-label">Send new orders directly to</div>
           <div class="email-addr">internetexportsindia202@gmail.com</div>
         </div>
+        <button class="email-copy" onclick="checkEmail()" id="checkEmailBtn" title="Manually check for new order emails">Check Inbox</button>
         <button class="email-copy" onclick="copyEmail()">Copy Email</button>
       </div>
       <div class="orders-toolbar">
@@ -2470,10 +2471,20 @@ function toggleOrder(id){
 
 function copyEmail(){
   navigator.clipboard.writeText('internetexportsindia202@gmail.com').then(()=>{
-    const btn=document.querySelector('.email-copy');
+    const btns=document.querySelectorAll('.email-copy');
+    const btn=btns[btns.length-1];
     btn.textContent='Copied!';
     setTimeout(()=>btn.textContent='Copy Email',2000);
   });
+}
+function checkEmail(){
+  const btn=document.getElementById('checkEmailBtn');
+  btn.textContent='Checking...';
+  btn.disabled=true;
+  fetch('/api/check-email',{method:'POST'}).then(r=>r.json()).then(d=>{
+    if(d.ok){btn.textContent='Check Triggered!';setTimeout(()=>{btn.textContent='Check Inbox';btn.disabled=false;},3000);}
+    else{btn.textContent='Not Configured';setTimeout(()=>{btn.textContent='Check Inbox';btn.disabled=false;},3000);}
+  }).catch(()=>{btn.textContent='Error';setTimeout(()=>{btn.textContent='Check Inbox';btn.disabled=false;},3000);});
 }
 function openOrderModal(){
   document.getElementById('ordCurrentId').value='';

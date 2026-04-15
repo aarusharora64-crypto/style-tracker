@@ -3,6 +3,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
 const path = require('path');
+const Imap = require('imap');
+const { simpleParser } = require('mailparser');
 
 const app = express();
 const server = http.createServer(app);
@@ -11,6 +13,11 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
+
+// ── Gmail IMAP Config ─────────────────────────────────
+const EMAIL_USER = process.env.EMAIL_USER || 'internetexportsindia202@gmail.com';
+const EMAIL_PASS = process.env.EMAIL_PASS || '';  // Gmail App Password
+const EMAIL_CHECK_INTERVAL = parseInt(process.env.EMAIL_CHECK_INTERVAL) || 60000; // 1 min
 
 // ── Default admin password (change on first login) ──
 const DEFAULT_ADMIN_PIN = '1234';
@@ -300,7 +307,184 @@ io.on('connection', (socket) => {
   });
 });
 
+// ── Email-to-Order Integration ────────────────────────
+function parseOrderFromEmail(subject, body, from) {
+  // Try to extract order details from email
+  const text = (subject + ' ' + body).replace(/<[^>]*>/g, ' ');
+
+  // Extract buyer name from sender or subject
+  let buyer = '';
+  const buyerMatch = text.match(/(?:buyer|brand|customer|from)[:\s]+([A-Za-z\s&]+?)(?:\n|,|;|\.|$)/i);
+  if (buyerMatch) buyer = buyerMatch[1].trim();
+  if (!buyer && from) {
+    const fromName = from.match(/^([^<]+)</);
+    buyer = fromName ? fromName[1].trim() : from.split('@')[0];
+  }
+
+  // Extract style number
+  let styleNo = '';
+  const styleMatch = text.match(/(?:style|style\s*no|style\s*#|style\s*number|article)[:\s#]*([A-Z0-9][-A-Z0-9/\s]{1,20})/i);
+  if (styleMatch) styleNo = styleMatch[1].trim().toUpperCase();
+  if (!styleNo) {
+    const codeMatch = text.match(/\b([A-Z]{1,5}[-]?\d{2,6})\b/);
+    if (codeMatch) styleNo = codeMatch[1];
+  }
+
+  // Extract PO number
+  let poNumber = '';
+  const poMatch = text.match(/(?:po|p\.o\.|purchase\s*order|order\s*no|order\s*#)[:\s#]*([A-Z0-9][-A-Z0-9/]{1,25})/i);
+  if (poMatch) poNumber = poMatch[1].trim();
+
+  // Extract quantity
+  let quantity = 0;
+  const qtyMatch = text.match(/(?:qty|quantity|pcs|pieces|units)[:\s]*([0-9,]+)/i);
+  if (qtyMatch) quantity = parseInt(qtyMatch[1].replace(/,/g, '')) || 0;
+
+  // Extract ex-factory date
+  let exFactoryDate = '';
+  const dateMatch = text.match(/(?:ex[\s-]*factory|delivery|ship\s*date|shipment)[:\s]*(\d{1,2}[\s/-]\w{3,9}[\s/-]\d{2,4}|\d{4}[-/]\d{2}[-/]\d{2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})/i);
+  if (dateMatch) {
+    const d = new Date(dateMatch[1]);
+    if (!isNaN(d)) exFactoryDate = d.toISOString().split('T')[0];
+  }
+
+  // Description is the subject line
+  const description = subject || '';
+
+  return { buyer, styleNo, poNumber, quantity, exFactoryDate, description };
+}
+
+function checkEmails() {
+  if (!EMAIL_PASS) {
+    return; // No password configured, skip silently
+  }
+
+  const imap = new Imap({
+    user: EMAIL_USER,
+    password: EMAIL_PASS,
+    host: 'imap.gmail.com',
+    port: 993,
+    tls: true,
+    tlsOptions: { rejectUnauthorized: false },
+    authTimeout: 10000
+  });
+
+  function openInbox(cb) {
+    imap.openBox('INBOX', false, cb);
+  }
+
+  imap.once('ready', () => {
+    openInbox((err, box) => {
+      if (err) { console.error('IMAP inbox error:', err.message); imap.end(); return; }
+
+      // Search for unseen emails
+      imap.search(['UNSEEN'], (err, results) => {
+        if (err) { console.error('IMAP search error:', err.message); imap.end(); return; }
+        if (!results || results.length === 0) { imap.end(); return; }
+
+        console.log(`📧 Found ${results.length} new email(s)`);
+
+        const fetch = imap.fetch(results, { bodies: '', markSeen: true });
+
+        fetch.on('message', (msg) => {
+          msg.on('body', (stream) => {
+            simpleParser(stream, (err, parsed) => {
+              if (err) { console.error('Parse error:', err.message); return; }
+
+              const from = parsed.from ? parsed.from.text : '';
+              const subject = parsed.subject || '';
+              const body = parsed.text || '';
+
+              console.log(`  📩 Email from: ${from} | Subject: ${subject}`);
+
+              // Parse order details
+              const orderData = parseOrderFromEmail(subject, body, from);
+
+              // Create order if we have at least buyer or style
+              if (orderData.buyer || orderData.styleNo) {
+                const id = 'ORD-' + Date.now().toString(36).toUpperCase();
+                const stages = {};
+                ORDER_STAGES.forEach(s => {
+                  stages[s.id] = { status: 'pending', targetDate: '', actualDate: '', notes: '', updatedBy: '', updatedAt: '' };
+                });
+
+                const order = {
+                  id,
+                  buyer: orderData.buyer || 'Unknown Buyer',
+                  styleNo: orderData.styleNo || 'TBD-' + Date.now().toString(36).toUpperCase().slice(-4),
+                  description: orderData.description,
+                  quantity: orderData.quantity,
+                  exFactoryDate: orderData.exFactoryDate,
+                  merchant: '',
+                  poNumber: orderData.poNumber,
+                  stages,
+                  createdAt: new Date().toISOString(),
+                  history: [{ stageId: 'order_confirm', status: 'pending', notes: `Auto-created from email: ${subject}`, by: 'Email System', at: new Date().toISOString() }],
+                  source: 'email',
+                  emailFrom: from,
+                  emailSubject: subject
+                };
+
+                db.orders[id] = order;
+                saveData();
+                io.emit('order-created', order);
+                io.emit('notify', {
+                  title: `📧 New Order from Email`,
+                  body: `${orderData.buyer || 'Unknown'} - ${orderData.styleNo || 'No Style'}: ${subject}`,
+                  styleNum: orderData.styleNo,
+                  status: 'other',
+                  time: new Date().toISOString(),
+                  fromUser: 'Email System',
+                  targetDepts: ['all']
+                });
+                console.log(`  ✅ Order created: ${id} (${orderData.buyer} / ${orderData.styleNo})`);
+              } else {
+                console.log(`  ⚠️ Could not extract order info, skipping`);
+              }
+            });
+          });
+        });
+
+        fetch.once('end', () => {
+          imap.end();
+        });
+      });
+    });
+  });
+
+  imap.once('error', (err) => {
+    console.error('IMAP error:', err.message);
+  });
+
+  imap.connect();
+}
+
+// ── Email Check API (manual trigger) ──────────────────
+app.post('/api/check-email', (req, res) => {
+  if (!EMAIL_PASS) return res.status(400).json({ error: 'Email not configured. Set EMAIL_PASS environment variable.' });
+  checkEmails();
+  res.json({ ok: true, message: 'Email check triggered' });
+});
+
+app.get('/api/email-status', (req, res) => {
+  res.json({
+    configured: !!EMAIL_PASS,
+    email: EMAIL_USER,
+    checkInterval: EMAIL_CHECK_INTERVAL / 1000 + 's'
+  });
+});
+
 server.listen(PORT, () => {
   console.log(`\n  Style Tracker running at http://localhost:${PORT}`);
-  console.log(`  Admin PIN: ${db.settings.adminPin} (change this in Admin settings)\n`);
+  console.log(`  Admin PIN: ${db.settings.adminPin} (change this in Admin settings)`);
+
+  // Start email checking if configured
+  if (EMAIL_PASS) {
+    console.log(`  📧 Email checking enabled for ${EMAIL_USER} (every ${EMAIL_CHECK_INTERVAL / 1000}s)`);
+    // Check immediately on startup, then on interval
+    setTimeout(checkEmails, 5000);
+    setInterval(checkEmails, EMAIL_CHECK_INTERVAL);
+  } else {
+    console.log(`  📧 Email checking disabled (set EMAIL_PASS env var to enable)\n`);
+  }
 });
