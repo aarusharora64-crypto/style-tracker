@@ -990,6 +990,34 @@ body{
   padding:20px;
 }
 
+.order-email-banner{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  background:linear-gradient(135deg,#075e54 0%,#128c7e 100%);
+  color:#fff;
+  padding:12px 18px;
+  border-radius:10px;
+  margin-bottom:16px;
+  font-size:13px;
+  flex-wrap:wrap;
+}
+.order-email-banner .email-icon{font-size:20px}
+.order-email-banner .email-label{opacity:0.85;font-size:12px}
+.order-email-banner .email-addr{font-weight:600;font-size:14px;letter-spacing:0.3px}
+.order-email-banner .email-copy{
+  margin-left:auto;
+  background:rgba(255,255,255,0.2);
+  border:1px solid rgba(255,255,255,0.3);
+  color:#fff;
+  padding:6px 14px;
+  border-radius:6px;
+  cursor:pointer;
+  font-size:12px;
+  font-family:inherit;
+  transition:background 0.2s;
+}
+.order-email-banner .email-copy:hover{background:rgba(255,255,255,0.3)}
 .orders-toolbar{
   display:flex;
   gap:10px;
@@ -1865,6 +1893,14 @@ body{
   <!-- ORDERS VIEW -->
   <div id="ordersView" class="view">
     <div class="orders-container">
+      <div class="order-email-banner">
+        <span class="email-icon">📧</span>
+        <div>
+          <div class="email-label">Send new orders directly to</div>
+          <div class="email-addr">internetexportsindia202@gmail.com</div>
+        </div>
+        <button class="email-copy" onclick="copyEmail()">Copy Email</button>
+      </div>
       <div class="orders-toolbar">
         <input type="text" id="ordSrch" placeholder="Search orders..." onkeyup="renderOrders()" />
         <select id="ordFilt" onchange="renderOrders()">
@@ -2432,6 +2468,13 @@ function toggleOrder(id){
   if(card)card.classList.toggle('expanded');
 }
 
+function copyEmail(){
+  navigator.clipboard.writeText('internetexportsindia202@gmail.com').then(()=>{
+    const btn=document.querySelector('.email-copy');
+    btn.textContent='Copied!';
+    setTimeout(()=>btn.textContent='Copy Email',2000);
+  });
+}
 function openOrderModal(){
   document.getElementById('ordCurrentId').value='';
   document.getElementById('orderModalTitle').textContent='Create Order';
