@@ -308,50 +308,77 @@ io.on('connection', (socket) => {
 });
 
 // ── Email-to-Order Integration ────────────────────────
+// Only process emails from ERP system
+const ALLOWED_EMAIL_SENDERS = ['alert@internetexportsindia.com'];
+
+function extractField(text, fieldName) {
+  // Match "FieldName\tValue" or "FieldName  Value" pattern from ERP emails
+  const patterns = [
+    new RegExp(fieldName + '\\s*\\t+\\s*([^\\t\\n]+)', 'i'),
+    new RegExp(fieldName + '\\s*:\\s*([^\\n]+)', 'i'),
+    new RegExp('<td>' + fieldName + '</td>\\s*<td>([^<]*)</td>', 'i'),
+  ];
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m && m[1].trim()) return m[1].trim();
+  }
+  return '';
+}
+
+function parseEODate(dateStr) {
+  // Parse DD/MM/YYYY format from ERP
+  if (!dateStr) return '';
+  const m = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) {
+    const [, day, month, year] = m;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  // Try ISO format
+  const d = new Date(dateStr);
+  if (!isNaN(d)) return d.toISOString().split('T')[0];
+  return '';
+}
+
 function parseOrderFromEmail(subject, body, from) {
-  // Try to extract order details from email
-  const text = (subject + ' ' + body).replace(/<[^>]*>/g, ' ');
+  const text = body || '';
+  const htmlAndText = (body + ' ' + subject).replace(/<[^>]*>/g, ' ');
 
-  // Extract buyer name from sender or subject
-  let buyer = '';
-  const buyerMatch = text.match(/(?:buyer|brand|customer|from)[:\s]+([A-Za-z\s&]+?)(?:\n|,|;|\.|$)/i);
-  if (buyerMatch) buyer = buyerMatch[1].trim();
-  if (!buyer && from) {
-    const fromName = from.match(/^([^<]+)</);
-    buyer = fromName ? fromName[1].trim() : from.split('@')[0];
-  }
+  // Extract EO number from subject: "New EO:      23764 Added"
+  let eoNo = '';
+  const eoSubjectMatch = subject.match(/EO[:\s]+(\d+)/i);
+  if (eoSubjectMatch) eoNo = eoSubjectMatch[1];
 
-  // Extract style number
-  let styleNo = '';
-  const styleMatch = text.match(/(?:style|style\s*no|style\s*#|style\s*number|article)[:\s#]*([A-Z0-9][-A-Z0-9/\s]{1,20})/i);
-  if (styleMatch) styleNo = styleMatch[1].trim().toUpperCase();
-  if (!styleNo) {
-    const codeMatch = text.match(/\b([A-Z]{1,5}[-]?\d{2,6})\b/);
-    if (codeMatch) styleNo = codeMatch[1];
-  }
+  // Extract structured fields from ERP email body
+  const buyer = extractField(text, 'Buyer') || extractField(htmlAndText, 'Buyer');
+  const styleNo = extractField(text, 'Style No') || extractField(htmlAndText, 'Style No');
+  const styleDesc = extractField(text, 'Style Desc') || extractField(htmlAndText, 'Style Desc');
+  const merchandiser = extractField(text, 'Merchandiser') || extractField(htmlAndText, 'Merchandiser');
+  const season = extractField(text, 'Season') || extractField(htmlAndText, 'Season');
+  const rate = extractField(text, 'Rate') || extractField(htmlAndText, 'Rate');
+  const totalValue = extractField(text, 'Total Order Value') || extractField(htmlAndText, 'Total Order Value');
+  const shipMode = extractField(text, 'Mode of Shipment') || extractField(htmlAndText, 'Mode of Shipment');
+  const poNumber = extractField(text, 'EO No') || extractField(htmlAndText, 'EO No') || eoNo;
 
-  // Extract PO number
-  let poNumber = '';
-  const poMatch = text.match(/(?:po|p\.o\.|purchase\s*order|order\s*no|order\s*#)[:\s#]*([A-Z0-9][-A-Z0-9/]{1,25})/i);
-  if (poMatch) poNumber = poMatch[1].trim();
-
-  // Extract quantity
+  // Quantity
   let quantity = 0;
-  const qtyMatch = text.match(/(?:qty|quantity|pcs|pieces|units)[:\s]*([0-9,]+)/i);
-  if (qtyMatch) quantity = parseInt(qtyMatch[1].replace(/,/g, '')) || 0;
+  const qtyStr = extractField(text, 'Quantity') || extractField(htmlAndText, 'Quantity');
+  if (qtyStr) quantity = parseInt(qtyStr.replace(/,/g, '')) || 0;
 
-  // Extract ex-factory date
-  let exFactoryDate = '';
-  const dateMatch = text.match(/(?:ex[\s-]*factory|delivery|ship\s*date|shipment)[:\s]*(\d{1,2}[\s/-]\w{3,9}[\s/-]\d{2,4}|\d{4}[-/]\d{2}[-/]\d{2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})/i);
-  if (dateMatch) {
-    const d = new Date(dateMatch[1]);
-    if (!isNaN(d)) exFactoryDate = d.toISOString().split('T')[0];
-  }
+  // Dates
+  const exFactoryDate = parseEODate(extractField(text, 'Ex Factory Date') || extractField(htmlAndText, 'Ex Factory Date'));
+  const shipDate = parseEODate(extractField(text, 'Ship Date') || extractField(htmlAndText, 'Ship Date'));
+  const orderDate = parseEODate(extractField(text, 'Order Date') || extractField(htmlAndText, 'Order Date'));
 
-  // Description is the subject line
-  const description = subject || '';
+  // Build description with useful info
+  const descParts = [];
+  if (styleDesc) descParts.push(styleDesc);
+  if (season) descParts.push(`Season: ${season}`);
+  if (rate) descParts.push(`Rate: ${rate}`);
+  if (totalValue) descParts.push(`Value: ${totalValue}`);
+  if (shipMode) descParts.push(`Ship: ${shipMode}`);
+  const description = descParts.join(' | ');
 
-  return { buyer, styleNo, poNumber, quantity, exFactoryDate, description };
+  return { buyer, styleNo, poNumber, quantity, exFactoryDate, shipDate, orderDate, description, merchandiser };
 }
 
 function checkEmails() {
@@ -392,21 +419,35 @@ function checkEmails() {
               if (err) { console.error('Parse error:', err.message); return; }
 
               const from = parsed.from ? parsed.from.text : '';
+              const fromEmail = parsed.from && parsed.from.value && parsed.from.value[0] ? parsed.from.value[0].address.toLowerCase() : '';
               const subject = parsed.subject || '';
               const body = parsed.text || '';
+              const htmlBody = parsed.html || '';
 
-              console.log(`  📩 Email from: ${from} | Subject: ${subject}`);
+              console.log(`  📩 Email from: ${from} (${fromEmail}) | Subject: ${subject}`);
 
-              // Parse order details
-              const orderData = parseOrderFromEmail(subject, body, from);
+              // Only process emails from allowed senders (ERP system)
+              if (!ALLOWED_EMAIL_SENDERS.includes(fromEmail)) {
+                console.log(`  ⏭️ Skipping — sender not in allowed list`);
+                return;
+              }
 
-              // Create order if we have at least buyer or style
+              // Parse order details from ERP email
+              const fullBody = body + '\n' + htmlBody;
+              const orderData = parseOrderFromEmail(subject, fullBody, from);
+
+              // Create order if we have buyer or style
               if (orderData.buyer || orderData.styleNo) {
                 const id = 'ORD-' + Date.now().toString(36).toUpperCase();
                 const stages = {};
                 ORDER_STAGES.forEach(s => {
                   stages[s.id] = { status: 'pending', targetDate: '', actualDate: '', notes: '', updatedBy: '', updatedAt: '' };
                 });
+
+                // Set ex-factory date as target for the ex_factory stage
+                if (orderData.exFactoryDate) {
+                  stages['ex_factory'].targetDate = orderData.exFactoryDate;
+                }
 
                 const order = {
                   id,
@@ -415,11 +456,11 @@ function checkEmails() {
                   description: orderData.description,
                   quantity: orderData.quantity,
                   exFactoryDate: orderData.exFactoryDate,
-                  merchant: '',
+                  merchant: orderData.merchandiser || '',
                   poNumber: orderData.poNumber,
                   stages,
                   createdAt: new Date().toISOString(),
-                  history: [{ stageId: 'order_confirm', status: 'pending', notes: `Auto-created from email: ${subject}`, by: 'Email System', at: new Date().toISOString() }],
+                  history: [{ stageId: 'order_confirm', status: 'pending', notes: `Auto-created from ERP alert: EO ${orderData.poNumber}`, by: 'ERP System', at: new Date().toISOString() }],
                   source: 'email',
                   emailFrom: from,
                   emailSubject: subject
@@ -429,17 +470,17 @@ function checkEmails() {
                 saveData();
                 io.emit('order-created', order);
                 io.emit('notify', {
-                  title: `📧 New Order from Email`,
-                  body: `${orderData.buyer || 'Unknown'} - ${orderData.styleNo || 'No Style'}: ${subject}`,
+                  title: `📧 New EO: ${orderData.poNumber} — ${orderData.buyer}`,
+                  body: `Style: ${orderData.styleNo} | Qty: ${orderData.quantity} | Ex-Factory: ${orderData.exFactoryDate}`,
                   styleNum: orderData.styleNo,
                   status: 'other',
                   time: new Date().toISOString(),
-                  fromUser: 'Email System',
+                  fromUser: 'ERP System',
                   targetDepts: ['all']
                 });
-                console.log(`  ✅ Order created: ${id} (${orderData.buyer} / ${orderData.styleNo})`);
+                console.log(`  ✅ Order created: ${id} — EO ${orderData.poNumber} | ${orderData.buyer} | ${orderData.styleNo} | Qty: ${orderData.quantity}`);
               } else {
-                console.log(`  ⚠️ Could not extract order info, skipping`);
+                console.log(`  ⚠️ Could not extract order info from ERP email, skipping`);
               }
             });
           });
