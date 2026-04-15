@@ -2,9 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Style Tracker">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#075e54">
+<meta name="msapplication-TileColor" content="#075e54">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <title>Style Tracker</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👔</text></svg>">
+<link rel="icon" href="/icon-192.png" type="image/png">
 <script src="/socket.io/socket.io.js"></script>
 <style>
 :root{
@@ -1666,6 +1674,7 @@ body{
    ═══════════════════════════════════════════ */
 @media(max-width:768px){
   .topbar .logo{font-size:15px}
+  .topbar .user-badge{display:none}
   .tab-btn{padding:5px 11px;font-size:11px}
   .notif-panel{width:100%}
   .login-card{width:90%;padding:24px 18px}
@@ -1679,28 +1688,133 @@ body{
   .timeline-stages{grid-template-columns:repeat(auto-fit,minmax(100px,1fr))}
   .stage-step{padding:10px 6px}
   .order-info-row{gap:10px}
+  .online-count{display:none}
 }
 
-@media(max-width:480px){
-  .topbar{padding:0 8px;height:48px}
-  .topbar .logo{font-size:13px}
-  .tab-btn{padding:4px 8px;font-size:9px}
-  .toast{min-width:240px;max-width:calc(100vw - 20px)}
-  .notif-panel{width:100%;height:100%;border-radius:0}
-  .login-card{width:95%;padding:20px 16px}
-  .modal{width:95%;padding:16px 14px}
-  .order-modal{width:95%;padding:16px 12px}
-  .dash-container,.styles-container,.orders-container,.admin-container{padding:12px}
+@media(max-width:600px){
+  /* Move tabs to bottom nav bar on mobile */
+  .app{padding-bottom:56px}
+  .topbar{height:46px}
+  .topbar .tabs{
+    position:fixed;
+    bottom:0;
+    left:0;
+    right:0;
+    background:var(--primary);
+    display:flex;
+    justify-content:space-around;
+    padding:6px 4px;
+    padding-bottom:max(6px, env(safe-area-inset-bottom));
+    z-index:200;
+    box-shadow:0 -2px 10px rgba(0,0,0,0.15);
+    gap:0;
+  }
+  .tab-btn{
+    flex:1;
+    padding:6px 2px;
+    font-size:10px;
+    border-radius:8px;
+    text-align:center;
+    min-width:0;
+  }
+  .tab-btn .badge{top:-2px;right:2px;font-size:8px;min-width:14px;height:14px;border-radius:7px}
+  .topbar .logo{font-size:14px;font-weight:700}
+  .topbar .right{gap:8px}
+  .logout-btn{padding:4px 10px;font-size:11px}
+
+  /* Containers */
+  .dash-container,.styles-container,.orders-container,.admin-container{padding:10px}
+
+  /* Chat input */
+  .chat-input{padding:8px}
+  .chat-input input{font-size:14px;padding:10px 14px}
+  .send-btn{width:40px;height:40px;font-size:16px}
+
+  /* Stats */
   .stat-grid{grid-template-columns:1fr 1fr}
   .styles-grid{grid-template-columns:1fr}
+
+  /* Orders */
   .orders-stats{grid-template-columns:repeat(2,1fr)}
-  .timeline-stages{grid-template-columns:repeat(auto-fit,minmax(80px,1fr))}
+  .orders-bar{flex-direction:column;gap:8px}
+  .orders-bar input{width:100%}
+  .order-email-banner{flex-direction:column;text-align:center;gap:8px;padding:12px}
+  .order-email-banner .email-copy{margin-top:4px}
+
+  /* Order cards */
+  .order-card{padding:12px}
+  .order-card-header{flex-direction:column;gap:8px}
+  .order-card-header .left{width:100%}
+  .order-card-header .right{flex-direction:row;justify-content:space-between;width:100%}
+  .progress-bar{width:100px}
+
+  /* Timeline stages */
+  .timeline-stages{grid-template-columns:repeat(3,1fr)}
   .stage-step{padding:8px 4px}
   .stage-icon{width:32px;height:32px;font-size:14px}
   .stage-label{font-size:9px}
-  .order-card-header .right{flex-direction:row;justify-content:space-between;width:100%;margin-top:8px}
-  .order-info-row{gap:6px}
-  .send-btn{width:40px;height:40px;font-size:16px}
+
+  /* Modals */
+  .modal{width:95%;padding:16px 14px;max-height:85vh}
+  .order-modal{width:98%;padding:14px 10px;max-height:90vh}
+  .login-card{width:92%;padding:24px 18px}
+
+  /* Notifications */
+  .toast{min-width:240px;max-width:calc(100vw - 20px);bottom:70px}
+  .notif-panel{width:100%;height:100%;border-radius:0;top:0}
+
+  /* Order info */
+  .order-info-row{gap:6px;flex-direction:column}
+  .order-info-row > div{width:100%}
+
+  /* Admin */
+  .admin-container .team-list{gap:8px}
+}
+
+@media(max-width:360px){
+  .tab-btn{font-size:9px;padding:5px 1px}
+  .topbar .logo{font-size:12px}
+  .timeline-stages{grid-template-columns:repeat(2,1fr)}
+}
+
+/* PWA install prompt banner */
+.pwa-install-banner{
+  display:none;
+  position:fixed;
+  bottom:60px;
+  left:10px;
+  right:10px;
+  background:var(--primary);
+  color:#fff;
+  padding:14px 16px;
+  border-radius:12px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.25);
+  z-index:300;
+  align-items:center;
+  gap:12px;
+  font-size:13px;
+}
+.pwa-install-banner.show{display:flex}
+.pwa-install-banner .pwa-text{flex:1}
+.pwa-install-banner .pwa-text strong{display:block;font-size:14px;margin-bottom:2px}
+.pwa-install-btn{
+  background:#fff;
+  color:var(--primary);
+  border:none;
+  padding:8px 18px;
+  border-radius:8px;
+  font-weight:700;
+  font-size:13px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.pwa-dismiss{
+  background:none;
+  border:none;
+  color:rgba(255,255,255,0.7);
+  font-size:18px;
+  cursor:pointer;
+  padding:4px;
 }
 </style>
 </head>
@@ -2608,6 +2722,46 @@ function fmtTime(d){return new Date(d).toLocaleString('en-IN',{day:'2-digit',mon
 function shortTime(d){return new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});}
 
 init();
+
+// ── PWA Service Worker Registration ──────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    console.log('SW registered:', reg.scope);
+  }).catch(err => console.log('SW failed:', err));
+}
+
+// ── PWA Install Prompt ──────────────────────────
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const banner = document.getElementById('pwaInstallBanner');
+  if (banner) banner.classList.add('show');
+});
+
+function installPWA() {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(result => {
+    deferredPrompt = null;
+    document.getElementById('pwaInstallBanner').classList.remove('show');
+  });
+}
+
+function dismissPWA() {
+  document.getElementById('pwaInstallBanner').classList.remove('show');
+}
 </script>
+
+<!-- PWA Install Banner -->
+<div class="pwa-install-banner" id="pwaInstallBanner">
+  <div class="pwa-text">
+    <strong>Install Style Tracker</strong>
+    Add to home screen for quick access
+  </div>
+  <button class="pwa-install-btn" onclick="installPWA()">Install</button>
+  <button class="pwa-dismiss" onclick="dismissPWA()">&times;</button>
+</div>
+
 </body>
 </html>
