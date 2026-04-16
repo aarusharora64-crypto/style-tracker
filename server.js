@@ -188,6 +188,8 @@ app.put('/api/orders/:id/stage', (req, res) => {
   const { stageId, status, targetDate, actualDate, notes, userName } = req.body;
   if (!stageId || !order.stages[stageId]) return res.status(400).json({ error: 'Invalid stage' });
   const stage = order.stages[stageId];
+  const oldStatus = stage.status;
+  const oldTarget = stage.targetDate;
   if (status) stage.status = status;
   if (targetDate !== undefined) stage.targetDate = targetDate;
   if (actualDate !== undefined) stage.actualDate = actualDate;
@@ -197,6 +199,53 @@ app.put('/api/orders/:id/stage', (req, res) => {
   order.history.push({ stageId, status: stage.status, notes: stage.notes, by: userName || '', at: stage.updatedAt });
   saveData();
   io.emit('order-updated', { orderId: req.params.id, stageId, stage, history: order.history });
+
+  // ── Send department notifications on changes ──
+  const stageInfo = ORDER_STAGES.find(s => s.id === stageId);
+  if (stageInfo) {
+    const stageIdx = ORDER_STAGES.findIndex(s => s.id === stageId);
+    const nextStage = ORDER_STAGES[stageIdx + 1];
+    const targetDepts = new Set([stageInfo.dept, 'all', 'merchandising']);
+
+    // Notify next department when current stage is marked done
+    if (status === 'done' && nextStage) {
+      targetDepts.add(nextStage.dept);
+    }
+
+    let title = '', body = '';
+    if (status && status !== oldStatus) {
+      if (status === 'done') {
+        title = `✅ ${stageInfo.label} Completed`;
+        body = `${order.buyer} - ${order.styleNo}: ${stageInfo.label} is done.${nextStage ? ' Next: ' + nextStage.label : ' All stages complete!'}`;
+      } else if (status === 'active') {
+        title = `▶️ ${stageInfo.label} Started`;
+        body = `${order.buyer} - ${order.styleNo}: ${stageInfo.label} is now in progress.`;
+      } else if (status === 'delayed') {
+        title = `⚠️ ${stageInfo.label} Delayed`;
+        body = `${order.buyer} - ${order.styleNo}: ${stageInfo.label} has been marked as delayed.${notes ? ' Note: ' + notes : ''}`;
+      } else if (status === 'issue') {
+        title = `🚨 Issue at ${stageInfo.label}`;
+        body = `${order.buyer} - ${order.styleNo}: Issue reported at ${stageInfo.label}.${notes ? ' Note: ' + notes : ''}`;
+      }
+    } else if (targetDate !== undefined && targetDate !== oldTarget) {
+      title = `📅 Timeline Updated: ${stageInfo.label}`;
+      body = `${order.buyer} - ${order.styleNo}: Target date changed to ${targetDate || 'not set'}.`;
+    }
+
+    if (title) {
+      io.emit('notify', {
+        title,
+        body,
+        orderId: req.params.id,
+        stageId,
+        status: status || oldStatus,
+        targetDepts: [...targetDepts],
+        fromUser: userName || '',
+        at: new Date().toISOString()
+      });
+    }
+  }
+
   res.json({ ok: true });
 });
 

@@ -2778,8 +2778,8 @@ function renderOrders(){
       return `<div class="stage-step ${cls}">
         <div class="stage-icon">${s.icon}</div>
         <div class="stage-label">${s.label}</div>
-        <div class="stage-dept">${s.dept}</div>
-        ${(tgt||act)?`<div class="stage-dates">${tgt?tgt+'<br>':''}${act?act:''}</div>`:''}
+        <div class="stage-dept">${deptLabel(s.dept)}</div>
+        ${(tgt||act)?`<div class="stage-dates">${tgt?'<span style="color:#6b7280">'+tgt+'</span><br>':''}${act?'<span style="color:#059669;font-weight:600">'+act+'</span>':''}</div>`:''}
         ${sd.notes?`<div class="stage-notes">${esc(sd.notes)}</div>`:''}
         <div class="stage-edit-form" id="ote_${o.id}_${s.id}">
           <div class="form-row"><label>Status</label><select id="otes_${o.id}_${s.id}"><option value="pending"${sd.status==='pending'?' selected':''}>Pending</option><option value="active"${sd.status==='active'?' selected':''}>In Progress</option><option value="done"${sd.status==='done'?' selected':''}>Done</option><option value="delayed"${sd.status==='delayed'?' selected':''}>Delayed</option><option value="issue"${sd.status==='issue'?' selected':''}>Issue</option></select></div>
