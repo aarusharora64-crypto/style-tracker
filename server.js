@@ -51,6 +51,7 @@ if (!db.settings) db.settings = { adminPin: DEFAULT_ADMIN_PIN, companyName: 'Sty
 if (!db.users) db.users = [{ id: 'admin', name: 'Admin', role: 'admin', dept: 'all', pin: DEFAULT_ADMIN_PIN }];
 if (!db.orders) db.orders = {};
 if (!db.deptPasswords) db.deptPasswords = {};
+if (!db.pendingChanges) db.pendingChanges = [];
 
 // Default department passwords (admin can change these)
 const DEFAULT_DEPT_PASSWORDS = {
@@ -182,11 +183,10 @@ app.post('/api/orders', (req, res) => {
   res.json({ ok: true, order });
 });
 
-app.put('/api/orders/:id/stage', (req, res) => {
-  const order = db.orders[req.params.id];
-  if (!order) return res.status(404).json({ error: 'Order not found' });
-  const { stageId, status, targetDate, actualDate, notes, userName } = req.body;
-  if (!stageId || !order.stages[stageId]) return res.status(400).json({ error: 'Invalid stage' });
+// Helper: apply a stage change and send notifications
+function applyStageChange(orderId, stageId, status, targetDate, actualDate, notes, userName) {
+  const order = db.orders[orderId];
+  if (!order || !order.stages[stageId]) return;
   const stage = order.stages[stageId];
   const oldStatus = stage.status;
   const oldTarget = stage.targetDate;
@@ -198,19 +198,15 @@ app.put('/api/orders/:id/stage', (req, res) => {
   stage.updatedAt = new Date().toISOString();
   order.history.push({ stageId, status: stage.status, notes: stage.notes, by: userName || '', at: stage.updatedAt });
   saveData();
-  io.emit('order-updated', { orderId: req.params.id, stageId, stage, history: order.history });
+  io.emit('order-updated', { orderId, stageId, stage, history: order.history });
 
-  // ── Send department notifications on changes ──
+  // Send department notifications
   const stageInfo = ORDER_STAGES.find(s => s.id === stageId);
   if (stageInfo) {
     const stageIdx = ORDER_STAGES.findIndex(s => s.id === stageId);
     const nextStage = ORDER_STAGES[stageIdx + 1];
     const targetDepts = new Set([stageInfo.dept, 'all', 'merchandising']);
-
-    // Notify next department when current stage is marked done
-    if (status === 'done' && nextStage) {
-      targetDepts.add(nextStage.dept);
-    }
+    if (status === 'done' && nextStage) targetDepts.add(nextStage.dept);
 
     let title = '', body = '';
     if (status && status !== oldStatus) {
@@ -233,18 +229,118 @@ app.put('/api/orders/:id/stage', (req, res) => {
     }
 
     if (title) {
-      io.emit('notify', {
-        title,
-        body,
-        orderId: req.params.id,
-        stageId,
-        status: status || oldStatus,
-        targetDepts: [...targetDepts],
-        fromUser: userName || '',
-        at: new Date().toISOString()
-      });
+      io.emit('notify', { title, body, orderId, stageId, status: status || oldStatus, targetDepts: [...targetDepts], fromUser: userName || '', at: new Date().toISOString() });
     }
   }
+}
+
+app.put('/api/orders/:id/stage', (req, res) => {
+  const order = db.orders[req.params.id];
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const { stageId, status, targetDate, actualDate, notes, userName, userRole } = req.body;
+  if (!stageId || !order.stages[stageId]) return res.status(400).json({ error: 'Invalid stage' });
+
+  // If user is admin, apply immediately
+  if (userRole === 'admin') {
+    applyStageChange(req.params.id, stageId, status, targetDate, actualDate, notes, userName);
+    return res.json({ ok: true, approved: true });
+  }
+
+  // Non-admin: queue for approval
+  const pendingId = 'PC-' + Date.now().toString(36).toUpperCase();
+  const stageInfo = ORDER_STAGES.find(s => s.id === stageId);
+  const pending = {
+    id: pendingId,
+    orderId: req.params.id,
+    stageId,
+    stageLabel: stageInfo ? stageInfo.label : stageId,
+    buyer: order.buyer,
+    styleNo: order.styleNo,
+    changes: { status, targetDate, actualDate, notes },
+    currentValues: { ...order.stages[stageId] },
+    requestedBy: userName || 'Unknown',
+    requestedAt: new Date().toISOString(),
+    status: 'pending'  // pending, approved, rejected
+  };
+
+  db.pendingChanges.push(pending);
+  saveData();
+
+  // Notify admin about pending approval
+  io.emit('pending-change', pending);
+  io.emit('notify', {
+    title: `🔒 Approval Required`,
+    body: `${userName} wants to update ${stageInfo ? stageInfo.label : stageId} for ${order.buyer} - ${order.styleNo}`,
+    orderId: req.params.id,
+    stageId,
+    status: 'pending',
+    targetDepts: ['all', 'admin'],
+    fromUser: userName || '',
+    at: new Date().toISOString()
+  });
+
+  res.json({ ok: true, approved: false, pendingId, message: 'Change submitted for admin approval' });
+});
+
+// ── Approval APIs ────────────────────────────────
+app.get('/api/pending-changes', (req, res) => {
+  const pending = (db.pendingChanges || []).filter(p => p.status === 'pending');
+  res.json(pending);
+});
+
+app.post('/api/pending-changes/:id/approve', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const pc = db.pendingChanges.find(p => p.id === req.params.id);
+  if (!pc) return res.status(404).json({ error: 'Pending change not found' });
+  if (pc.status !== 'pending') return res.status(400).json({ error: 'Already processed' });
+
+  pc.status = 'approved';
+  pc.processedAt = new Date().toISOString();
+  pc.processedBy = 'Admin';
+
+  // Apply the change
+  const { status, targetDate, actualDate, notes } = pc.changes;
+  applyStageChange(pc.orderId, pc.stageId, status, targetDate, actualDate, notes, pc.requestedBy);
+  saveData();
+
+  io.emit('pending-resolved', { id: pc.id, status: 'approved' });
+  io.emit('notify', {
+    title: `✅ Change Approved`,
+    body: `${pc.requestedBy}'s update to ${pc.stageLabel} for ${pc.buyer} - ${pc.styleNo} was approved.`,
+    orderId: pc.orderId,
+    stageId: pc.stageId,
+    status: 'approved',
+    targetDepts: ['all'],
+    fromUser: 'Admin',
+    at: new Date().toISOString()
+  });
+
+  res.json({ ok: true });
+});
+
+app.post('/api/pending-changes/:id/reject', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const pc = db.pendingChanges.find(p => p.id === req.params.id);
+  if (!pc) return res.status(404).json({ error: 'Pending change not found' });
+  if (pc.status !== 'pending') return res.status(400).json({ error: 'Already processed' });
+
+  pc.status = 'rejected';
+  pc.processedAt = new Date().toISOString();
+  pc.processedBy = 'Admin';
+  pc.rejectReason = req.body.reason || '';
+  saveData();
+
+  io.emit('pending-resolved', { id: pc.id, status: 'rejected', reason: pc.rejectReason });
+  io.emit('notify', {
+    title: `❌ Change Rejected`,
+    body: `${pc.requestedBy}'s update to ${pc.stageLabel} for ${pc.buyer} - ${pc.styleNo} was rejected.${pc.rejectReason ? ' Reason: ' + pc.rejectReason : ''}`,
+    orderId: pc.orderId,
+    stageId: pc.stageId,
+    status: 'rejected',
+    targetDepts: ['all'],
+    fromUser: 'Admin',
+    at: new Date().toISOString()
+  });
 
   res.json({ ok: true });
 });

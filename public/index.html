@@ -1707,6 +1707,39 @@ body{
 }
 
 /* ═══════════════════════════════════════════
+   APPROVAL CARDS
+   ═══════════════════════════════════════════ */
+.approval-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px;
+  border-left:4px solid var(--warning);
+}
+.approval-card.approved{border-left-color:var(--success);opacity:0.7;}
+.approval-card.rejected{border-left-color:var(--danger);opacity:0.7;}
+.approval-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;}
+.approval-card-header .order-ref{font-size:14px;font-weight:700;color:var(--primary);}
+.approval-card-header .stage-ref{font-size:13px;color:var(--text);font-weight:600;}
+.approval-card-header .time-ref{font-size:11px;color:var(--text-secondary);}
+.approval-changes{background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;}
+.approval-changes .change-row{display:flex;gap:8px;margin-bottom:4px;}
+.approval-changes .change-label{font-weight:600;color:var(--text-secondary);min-width:70px;}
+.approval-changes .change-old{color:var(--danger);text-decoration:line-through;}
+.approval-changes .change-new{color:var(--success);font-weight:600;}
+.approval-actions{display:flex;gap:8px;justify-content:flex-end;}
+.approval-actions .btn-approve{
+  padding:8px 18px;border-radius:7px;border:none;background:var(--success);color:#fff;
+  font-size:12px;cursor:pointer;font-weight:600;transition:all 0.15s;font-family:inherit;
+}
+.approval-actions .btn-approve:hover{background:#16a34a;}
+.approval-actions .btn-reject{
+  padding:8px 18px;border-radius:7px;border:1px solid var(--danger);background:var(--surface);color:var(--danger);
+  font-size:12px;cursor:pointer;font-weight:600;transition:all 0.15s;font-family:inherit;
+}
+.approval-actions .btn-reject:hover{background:var(--danger);color:#fff;}
+.approval-requestor{font-size:12px;color:var(--text-secondary);margin-bottom:8px;}
+.pending-toast{background:#fef3c7;border-left-color:var(--warning);}
+.no-pending{text-align:center;padding:30px;color:var(--text-secondary);font-size:13px;}
+
+/* ═══════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════ */
 @media(max-width:768px){
@@ -1957,6 +1990,7 @@ body{
       <button class="tab-btn" data-v="styles" onclick="sw('styles')">Styles<span class="badge" id="bdgS"></span></button>
       <button class="tab-btn" data-v="orders" onclick="sw('orders')">Orders<span class="badge" id="bdgO"></span></button>
       <button class="tab-btn" data-v="insights" onclick="sw('insights')">Insights</button>
+      <button class="tab-btn" data-v="approvals" onclick="sw('approvals')" id="approvalsTab" style="display:none">Approvals<span class="badge" id="bdgA"></span></button>
       <button class="tab-btn" data-v="notif" onclick="toggleNP()">Alerts<span class="badge" id="bdgN"></span></button>
       <button class="tab-btn" data-v="admin" onclick="sw('admin')" id="adminTab" style="display:none">Admin</button>
     </div>
@@ -2115,6 +2149,21 @@ body{
     </div>
   </div>
 
+  <!-- APPROVALS VIEW (Admin only) -->
+  <div id="approvalsView" class="view">
+    <div class="admin-container">
+      <div class="admin-section">
+        <h3 style="display:flex;align-items:center;gap:8px">🔒 Pending Approvals <span id="pendingCount" style="background:var(--danger);color:#fff;font-size:12px;padding:2px 8px;border-radius:10px;font-weight:700">0</span></h3>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">Stage updates from team members require your approval before they take effect.</p>
+        <div id="pendingList"></div>
+      </div>
+      <div class="admin-section">
+        <h3>Recently Processed</h3>
+        <div id="processedList" style="max-height:300px;overflow-y:auto"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="adminView" class="view">
     <div class="admin-container">
       <div class="admin-section">
@@ -2214,7 +2263,7 @@ body{
 // ═══════════════════════════════════════════
 let me=null,socket=null;
 let allU=[],onlU=[],msgs=[],notifs=[],STY={},ORDERS={};
-let unreadC=0,fVal='all',adminPin=null;
+let unreadC=0,fVal='all',adminPin=null,pendingChanges=[];
 
 const DC={
   merchandising:'#0d9488',
@@ -2322,7 +2371,13 @@ async function verifyPin(){
   const p=document.getElementById('pinInp').value;
   try{
     const r=await(await fetch('/api/admin/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:p})})).json();
-    if(r.ok){adminPin=p;closePin();loginAs('admin');}else{document.getElementById('pinErr').textContent='Wrong PIN';document.getElementById('pinErr').classList.add('show');}
+    if(r.ok){
+      adminPin=p;closePin();
+      // Handle deferred approval actions
+      if(window._pendingApproveId){const id=window._pendingApproveId;window._pendingApproveId=null;approveChange(id);return;}
+      if(window._pendingRejectId){const id=window._pendingRejectId;const reason=window._pendingRejectReason||'';window._pendingRejectId=null;window._pendingRejectReason=null;rejectChange(id);return;}
+      loginAs('admin');
+    }else{document.getElementById('pinErr').textContent='Wrong PIN';document.getElementById('pinErr').classList.add('show');}
   }catch(e){document.getElementById('pinErr').textContent='Error';document.getElementById('pinErr').classList.add('show');}
 }
 document.getElementById('pinInp').addEventListener('keydown',e=>{if(e.key==='Enter')verifyPin();});
@@ -2334,7 +2389,11 @@ function loginAs(uid){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('mainApp').classList.add('active');
   document.getElementById('curUser').textContent=me.name;
-  if(me.role==='admin')document.getElementById('adminTab').style.display='';
+  if(me.role==='admin'){
+    document.getElementById('adminTab').style.display='';
+    document.getElementById('approvalsTab').style.display='';
+    loadPendingChanges();
+  }
   if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();
 
   socket=io();
@@ -2365,6 +2424,8 @@ function loginAs(uid){
   socket.on('order-updated',d=>{if(ORDERS[d.orderId]){ORDERS[d.orderId].stages[d.stageId]=d.stage;ORDERS[d.orderId].history=d.history;renderOrders();}});
   socket.on('order-info-updated',o=>{ORDERS[o.id]=o;renderOrders();});
   socket.on('order-deleted',id=>{delete ORDERS[id];renderOrders();updB('bdgO',Object.keys(ORDERS).length);});
+  socket.on('pending-change',pc=>{if(me.role==='admin'){pendingChanges.push(pc);renderApprovals();updB('bdgA',pendingChanges.length);}});
+  socket.on('pending-resolved',d=>{pendingChanges=pendingChanges.filter(p=>p.id!==d.id);renderApprovals();updB('bdgA',pendingChanges.length);});
 
   fetch('/api/data').then(r=>r.json()).then(d=>{STY=d.styles||{};renderDash();renderSty();});
   fetch('/api/orders').then(r=>r.json()).then(d=>{ORDERS=d.orderId?{[d.id]:d}:d||{};renderOrders();updB('bdgO',Object.keys(ORDERS).length);});
@@ -2372,10 +2433,11 @@ function loginAs(uid){
 
 function logout(){
   if(socket)socket.disconnect();
-  me=null;msgs=[];notifs=[];unreadC=0;adminPin=null;STY={};ORDERS={};
+  me=null;msgs=[];notifs=[];unreadC=0;adminPin=null;STY={};ORDERS={};pendingChanges=[];
   document.getElementById('mainApp').classList.remove('active');
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('adminTab').style.display='none';
+  document.getElementById('approvalsTab').style.display='none';
   document.getElementById('cmsgs').innerHTML='<div class="msg msg-system">Type a style number and update to get started</div>';
   init();
 }
@@ -2709,6 +2771,7 @@ function sw(v){
   if(v==='insights')loadInsights();
   if(v==='admin'){renderTeam();loadDeptPasswords();}
   if(v==='orders')renderOrders();
+  if(v==='approvals')loadPendingChanges();
 }
 
 // ═══════════════════════════════════════════
@@ -2953,7 +3016,7 @@ async function saveOrder(){
       // Apply AI suggested target dates for new orders
       if(!id&&window._pendingSuggestion){
         for(const[stageId,targetDate]of Object.entries(window._pendingSuggestion)){
-          try{await fetch('/api/orders/'+orderId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,targetDate,userName:me?me.name:'System'})});}catch(e){}
+          try{await fetch('/api/orders/'+orderId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,targetDate,userName:me?me.name:'System',userRole:me?me.role:'admin'})});}catch(e){}
         }
         window._pendingSuggestion=null;
       }
@@ -2989,29 +3052,38 @@ async function saveStage(ordId,stageId){
   const actualDate=document.getElementById('otea_'+ordId+'_'+stageId).value;
   const notes=document.getElementById('oten_'+ordId+'_'+stageId).value.trim();
   try{
-    const r=await(await fetch('/api/orders/'+ordId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,status,targetDate,actualDate,notes,userName:me.name})})).json();
+    const r=await(await fetch('/api/orders/'+ordId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,status,targetDate,actualDate,notes,userName:me.name,userRole:me.role})})).json();
     if(r.ok){
-      if(ORDERS[ordId]){
-        ORDERS[ordId].stages[stageId]={status,targetDate,actualDate,notes,updatedBy:me.name,updatedAt:new Date().toISOString()};
-        if(!ORDERS[ordId].history)ORDERS[ordId].history=[];
-        ORDERS[ordId].history.push({stageId,status,notes,by:me.name,at:new Date().toISOString()});
+      if(r.approved===false){
+        showToast('🔒 Pending Approval','Your update has been sent for admin approval.',false);
+        closeStageEdit(ordId,stageId);
+      }else{
+        if(ORDERS[ordId]){
+          ORDERS[ordId].stages[stageId]={status,targetDate,actualDate,notes,updatedBy:me.name,updatedAt:new Date().toISOString()};
+          if(!ORDERS[ordId].history)ORDERS[ordId].history=[];
+          ORDERS[ordId].history.push({stageId,status,notes,by:me.name,at:new Date().toISOString()});
+        }
+        renderOrders();
+        closeStageEdit(ordId,stageId);
       }
-      renderOrders();
-      closeStageEdit(ordId,stageId);
     }else alert('Error saving stage');
   }catch(e){alert('Error: '+e.message);}
 }
 
 async function quickDone(ordId,stageId){
   try{
-    const r=await(await fetch('/api/orders/'+ordId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,status:'done',actualDate:new Date().toISOString().split('T')[0],userName:me.name})})).json();
+    const r=await(await fetch('/api/orders/'+ordId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,status:'done',actualDate:new Date().toISOString().split('T')[0],userName:me.name,userRole:me.role})})).json();
     if(r.ok){
-      if(ORDERS[ordId]){
-        ORDERS[ordId].stages[stageId]={...ORDERS[ordId].stages[stageId],status:'done',actualDate:new Date().toISOString().split('T')[0],updatedBy:me.name,updatedAt:new Date().toISOString()};
-        if(!ORDERS[ordId].history)ORDERS[ordId].history=[];
-        ORDERS[ordId].history.push({stageId,status:'done',by:me.name,at:new Date().toISOString()});
+      if(r.approved===false){
+        showToast('🔒 Pending Approval','Your update has been sent for admin approval.',false);
+      }else{
+        if(ORDERS[ordId]){
+          ORDERS[ordId].stages[stageId]={...ORDERS[ordId].stages[stageId],status:'done',actualDate:new Date().toISOString().split('T')[0],updatedBy:me.name,updatedAt:new Date().toISOString()};
+          if(!ORDERS[ordId].history)ORDERS[ordId].history=[];
+          ORDERS[ordId].history.push({stageId,status:'done',by:me.name,at:new Date().toISOString()});
+        }
+        renderOrders();
       }
-      renderOrders();
     }else alert('Error marking stage done');
   }catch(e){alert('Error: '+e.message);}
 }
@@ -3024,6 +3096,93 @@ function cap(s){return s?s[0].toUpperCase()+s.slice(1):'';}
 function ini(n){return(n||'').split(/[\s-]+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();}
 function fmtTime(d){return new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});}
 function shortTime(d){return new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});}
+
+// ═══════════════════════════════════════════
+// APPROVAL WORKFLOW
+// ═══════════════════════════════════════════
+async function loadPendingChanges(){
+  try{
+    const r=await(await fetch('/api/pending-changes')).json();
+    pendingChanges=r||[];
+    renderApprovals();
+    updB('bdgA',pendingChanges.length);
+  }catch(e){console.error('Error loading pending changes',e);}
+}
+
+function renderApprovals(){
+  const pList=document.getElementById('pendingList');
+  const prList=document.getElementById('processedList');
+  if(!pList)return;
+
+  document.getElementById('pendingCount').textContent=pendingChanges.length;
+
+  if(!pendingChanges.length){
+    pList.innerHTML='<div class="no-pending">No pending approvals. All changes are up to date.</div>';
+  }else{
+    pList.innerHTML=pendingChanges.map(pc=>{
+      const changes=pc.changes||{};
+      const current=pc.currentValues||{};
+      let changesHtml='';
+      if(changes.status&&changes.status!==current.status)changesHtml+=`<div class="change-row"><span class="change-label">Status:</span><span class="change-old">${cap(current.status||'pending')}</span> → <span class="change-new">${cap(changes.status)}</span></div>`;
+      if(changes.targetDate!==undefined&&changes.targetDate!==current.targetDate)changesHtml+=`<div class="change-row"><span class="change-label">Target:</span><span class="change-old">${current.targetDate||'none'}</span> → <span class="change-new">${changes.targetDate||'none'}</span></div>`;
+      if(changes.actualDate!==undefined&&changes.actualDate!==current.actualDate)changesHtml+=`<div class="change-row"><span class="change-label">Actual:</span><span class="change-old">${current.actualDate||'none'}</span> → <span class="change-new">${changes.actualDate||'none'}</span></div>`;
+      if(changes.notes!==undefined&&changes.notes!==current.notes)changesHtml+=`<div class="change-row"><span class="change-label">Notes:</span><span class="change-new">${esc(changes.notes)||'(cleared)'}</span></div>`;
+
+      return `<div class="approval-card" id="apc_${pc.id}">
+        <div class="approval-card-header">
+          <div>
+            <div class="order-ref">${esc(pc.buyer)} — ${esc(pc.styleNo)}</div>
+            <div class="stage-ref">${pc.stageLabel}</div>
+          </div>
+          <div class="time-ref">${fmtTime(pc.requestedAt)}</div>
+        </div>
+        <div class="approval-requestor">Requested by <strong>${esc(pc.requestedBy)}</strong></div>
+        <div class="approval-changes">${changesHtml||'<em>No visible changes</em>'}</div>
+        <div class="approval-actions">
+          <button class="btn-reject" onclick="rejectChange('${pc.id}')">Reject</button>
+          <button class="btn-approve" onclick="approveChange('${pc.id}')">Approve</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+}
+
+async function approveChange(pcId){
+  if(!adminPin){
+    showPin();
+    window._pendingApproveId=pcId;
+    return;
+  }
+  try{
+    const r=await(await fetch('/api/pending-changes/'+pcId+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPin})})).json();
+    if(r.ok){
+      pendingChanges=pendingChanges.filter(p=>p.id!==pcId);
+      renderApprovals();
+      updB('bdgA',pendingChanges.length);
+      showToast('✅ Approved','Change has been applied successfully.',false);
+    }else alert(r.error||'Error approving');
+  }catch(e){alert('Error: '+e.message);}
+}
+
+async function rejectChange(pcId){
+  const reason=prompt('Rejection reason (optional):');
+  if(reason===null)return; // user cancelled
+  if(!adminPin){
+    showPin();
+    window._pendingRejectId=pcId;
+    window._pendingRejectReason=reason;
+    return;
+  }
+  try{
+    const r=await(await fetch('/api/pending-changes/'+pcId+'/reject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPin,reason})})).json();
+    if(r.ok){
+      pendingChanges=pendingChanges.filter(p=>p.id!==pcId);
+      renderApprovals();
+      updB('bdgA',pendingChanges.length);
+      showToast('❌ Rejected','Change has been rejected.',false);
+    }else alert(r.error||'Error rejecting');
+  }catch(e){alert('Error: '+e.message);}
+}
 
 init();
 
