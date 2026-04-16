@@ -1921,9 +1921,20 @@ body{
       <select id="chatFilt" onchange="applyF()">
         <option value="all">All Updates</option>
         <option value="my-dept">My Department</option>
+        <option value="merchandising">Merchandising</option>
+        <option value="sampling">Sampling</option>
+        <option value="accounts">Accounts</option>
+        <option value="purchase">Purchase</option>
+        <option value="fabric">Fabric</option>
+        <option value="trims">Trims</option>
+        <option value="production">Production</option>
         <option value="cutting">Cutting</option>
         <option value="stitching">Stitching</option>
+        <option value="embroidery">Embroidery</option>
+        <option value="printing">Printing</option>
+        <option value="washing">Washing</option>
         <option value="finishing">Finishing</option>
+        <option value="quality">QC</option>
         <option value="packing">Packing</option>
         <option value="shipped">Shipped</option>
         <option value="issue">Issues Only</option>
@@ -2039,21 +2050,51 @@ body{
       <div class="admin-section">
         <h3>Add Team Member</h3>
         <div class="admin-row">
-          <input type="text" id="addN" placeholder="Full name" />
-          <select id="addD">
-            <option value="cutting">Cutting</option>
-            <option value="stitching">Stitching</option>
-            <option value="finishing">Finishing</option>
-            <option value="packing">Packing</option>
-            <option value="shipping">Shipping</option>
-            <option value="all">All</option>
+          <input type="text" id="addN" placeholder="Full name" style="min-width:150px" />
+        </div>
+        <div class="admin-row">
+          <select id="addD" style="flex:2">
+            <optgroup label="Core Departments">
+              <option value="merchandising">Merchandising</option>
+              <option value="sampling">Sampling</option>
+              <option value="accounts">Accounts</option>
+              <option value="purchase">Purchase</option>
+            </optgroup>
+            <optgroup label="Fabric & Trims">
+              <option value="fabric">Fabric</option>
+              <option value="fabric-purchase">Fabric Purchase</option>
+              <option value="trims">Trims & Accessories</option>
+              <option value="store">Store</option>
+            </optgroup>
+            <optgroup label="Production">
+              <option value="production">Production Planning</option>
+              <option value="cutting">Cutting</option>
+              <option value="stitching">Stitching</option>
+              <option value="embroidery">Embroidery</option>
+              <option value="printing">Printing</option>
+              <option value="washing">Washing</option>
+            </optgroup>
+            <optgroup label="Quality & Finishing">
+              <option value="finishing">Finishing</option>
+              <option value="quality">Quality / QC</option>
+            </optgroup>
+            <optgroup label="Dispatch">
+              <option value="packing">Packing</option>
+              <option value="shipping">Shipping / Dispatch</option>
+            </optgroup>
+            <optgroup label="Management">
+              <option value="all">All Departments</option>
+            </optgroup>
           </select>
-          <select id="addR">
+          <select id="addR" style="flex:1">
             <option value="user">User</option>
             <option value="supervisor">Supervisor</option>
+            <option value="manager">Manager</option>
             <option value="admin">Admin</option>
           </select>
-          <button class="btn-primary" onclick="addUser()">Add</button>
+        </div>
+        <div class="admin-row">
+          <button class="btn-primary" onclick="addUser()" style="width:100%;padding:10px">+ Add Member</button>
         </div>
         <div id="addMsg" class="msg-success"></div>
       </div>
@@ -2099,12 +2140,29 @@ let allU=[],onlU=[],msgs=[],notifs=[],STY={},ORDERS={};
 let unreadC=0,fVal='all',adminPin=null;
 
 const DC={
+  merchandising:'#0d9488',
+  sampling:'#7c3aed',
+  accounts:'#dc2626',
+  purchase:'#ea580c',
+  fabric:'#2563eb',
+  'fabric-purchase':'#1d4ed8',
+  trims:'#ca8a04',
+  store:'#78716c',
+  production:'#0891b2',
   cutting:'#1d4ed8',
   stitching:'#b45309',
-  finishing:'#6d28d9',
+  embroidery:'#c026d3',
+  printing:'#6d28d9',
+  washing:'#0284c7',
+  finishing:'#7c3aed',
+  quality:'#be123c',
   packing:'#065f46',
   shipping:'#0f766e',
-  all:'#991b1b'
+  buyer:'#4f46e5',
+  finance:'#b91c1c',
+  all:'#991b1b',
+  admin:'#991b1b',
+  manager:'#9333ea'
 };
 
 const STAGE_ICON={
@@ -2150,7 +2208,7 @@ function renderLogin(){
   const L=document.getElementById('userList');
   if(!allU.length){L.innerHTML='<div class="no-results">No users yet. Ask admin to add team members.</div>';return;}
   L.innerHTML=allU.map(u=>{const i=ini(u.name),c=DC[u.dept]||'#666';
-    return `<button class="ubtn" onclick="loginAs('${u.id}')"><div class="av" style="background:${c}">${i}</div><div><div class="un">${esc(u.name)}</div><div class="ud">${u.dept} · ${u.role}</div></div></button>`;
+    return `<button class="ubtn" onclick="loginAs('${u.id}')"><div class="av" style="background:${c}">${i}</div><div><div class="un">${esc(u.name)}</div><div class="ud">${deptLabel(u.dept)} · ${u.role}</div></div></button>`;
   }).join('');
 }
 
@@ -2387,11 +2445,35 @@ async function addUser(){
   }catch(e){showM('addMsg','Error','err');}
 }
 
+const DEPT_LABELS={
+  merchandising:'Merchandising',sampling:'Sampling',accounts:'Accounts',purchase:'Purchase',
+  fabric:'Fabric',  'fabric-purchase':'Fabric Purchase',trims:'Trims & Accessories',store:'Store',
+  production:'Production',cutting:'Cutting',stitching:'Stitching',embroidery:'Embroidery',
+  printing:'Printing',washing:'Washing',finishing:'Finishing',quality:'Quality / QC',
+  packing:'Packing',shipping:'Shipping',buyer:'Buyer',finance:'Finance',all:'All Departments',
+  admin:'Admin'
+};
+function deptLabel(d){return DEPT_LABELS[d]||d.charAt(0).toUpperCase()+d.slice(1);}
+
 function renderTeam(){
-  document.getElementById('teamList').innerHTML=allU.map(u=>{
-    const i=ini(u.name),c=DC[u.dept]||'#666';
-    return `<div class="user-item"><div class="user-item-left"><div class="user-avatar" style="background:${c}">${i}</div><div><div class="user-name">${esc(u.name)}</div><div class="user-role">${u.dept} · ${u.role}</div></div></div>${u.id!=='admin'?`<button class="btn-danger" onclick="delU('${u.id}','${esc(u.name)}')">Remove</button>`:''}</div>`;
-  }).join('');
+  // Group by department
+  const grouped={};
+  allU.forEach(u=>{
+    const d=u.dept||'all';
+    if(!grouped[d])grouped[d]=[];
+    grouped[d].push(u);
+  });
+  let html='';
+  for(const [dept,users] of Object.entries(grouped)){
+    const c=DC[dept]||'#666';
+    html+=`<div style="margin-bottom:16px"><div style="font-size:11px;font-weight:700;color:${c};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;padding-left:4px">${deptLabel(dept)} (${users.length})</div>`;
+    users.forEach(u=>{
+      const i=ini(u.name);
+      html+=`<div class="user-item"><div class="user-item-left"><div class="user-avatar" style="background:${c}">${i}</div><div><div class="user-name">${esc(u.name)}</div><div class="user-role">${deptLabel(u.dept)} · ${u.role}</div></div></div>${u.id!=='admin'?`<button class="btn-danger" onclick="delU('${u.id}','${esc(u.name)}')">Remove</button>`:''}</div>`;
+    });
+    html+='</div>';
+  }
+  document.getElementById('teamList').innerHTML=html||'<div style="color:var(--text-secondary);font-size:13px;padding:12px">No team members yet. Add members above.</div>';
 }
 
 async function delU(id,name){
