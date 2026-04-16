@@ -842,6 +842,298 @@ app.get('/api/email-status', (req, res) => {
   });
 });
 
+// ── Claude AI Integration ────────────────────────
+const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY || '';
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
+
+async function callClaude(systemPrompt, userMessage) {
+  if (!CLAUDE_API_KEY) throw new Error('Claude API key not configured');
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': CLAUDE_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: CLAUDE_MODEL,
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }]
+    })
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error('Claude API error: ' + resp.status + ' ' + err);
+  }
+  const data = await resp.json();
+  return data.content[0].text;
+}
+
+// Build context summary of current orders for AI
+function buildOrderContext() {
+  const orders = Object.values(db.orders);
+  if (!orders.length) return 'No orders in the system yet.';
+
+  const summary = orders.slice(0, 50).map(o => {
+    const doneStages = ORDER_STAGES.filter(s => o.stages[s.id] && o.stages[s.id].status === 'done').length;
+    const activeStage = ORDER_STAGES.find(s => o.stages[s.id] && (o.stages[s.id].status === 'active' || (o.stages[s.id].status === 'pending' && doneStages > 0)));
+    const currentStage = ORDER_STAGES.find(s => !o.stages[s.id] || o.stages[s.id].status !== 'done');
+    const delayedStages = ORDER_STAGES.filter(s => o.stages[s.id] && o.stages[s.id].status === 'delayed');
+    const issueStages = ORDER_STAGES.filter(s => o.stages[s.id] && o.stages[s.id].status === 'issue');
+
+    let line = `${o.id}: ${o.buyer} / ${o.styleNo} | Qty: ${o.quantity} | Progress: ${doneStages}/${ORDER_STAGES.length} stages`;
+    if (o.exFactoryDate) line += ` | Ex-Factory: ${o.exFactoryDate}`;
+    if (currentStage) line += ` | Current: ${currentStage.label}`;
+    if (delayedStages.length) line += ` | DELAYED: ${delayedStages.map(s => s.label).join(', ')}`;
+    if (issueStages.length) line += ` | ISSUES: ${issueStages.map(s => s.label).join(', ')}`;
+    if (o.merchant) line += ` | Merchant: ${o.merchant}`;
+    return line;
+  }).join('\n');
+
+  return `Total orders: ${orders.length}\n\n${summary}`;
+}
+
+// Build detailed order info for a specific order
+function buildOrderDetail(order) {
+  let detail = `Order ${order.id}:\nBuyer: ${order.buyer}\nStyle: ${order.styleNo}\nDescription: ${order.description || 'N/A'}\nQuantity: ${order.quantity}\nEx-Factory: ${order.exFactoryDate || 'Not set'}\nMerchant: ${order.merchant || 'N/A'}\nPO: ${order.poNumber || 'N/A'}\nCreated: ${order.createdAt}\n\nStage Details:\n`;
+  ORDER_STAGES.forEach(s => {
+    const stg = order.stages[s.id] || {};
+    detail += `  ${s.icon} ${s.label} (${s.dept}): ${stg.status || 'pending'}`;
+    if (stg.targetDate) detail += ` | Target: ${stg.targetDate}`;
+    if (stg.actualDate) detail += ` | Actual: ${stg.actualDate}`;
+    if (stg.notes) detail += ` | Notes: ${stg.notes}`;
+    if (stg.updatedBy) detail += ` | By: ${stg.updatedBy}`;
+    detail += '\n';
+  });
+  if (order.history && order.history.length) {
+    detail += '\nRecent History:\n';
+    order.history.slice(-10).forEach(h => {
+      const stg = ORDER_STAGES.find(x => x.id === h.stageId);
+      detail += `  ${h.at}: ${stg ? stg.label : h.stageId} → ${h.status} by ${h.by}${h.notes ? ' (' + h.notes + ')' : ''}\n`;
+    });
+  }
+  return detail;
+}
+
+const AI_SYSTEM_PROMPT = `You are the AI assistant for Style Tracker, a garment export order management system. You help users understand order status, identify delays, and manage their production pipeline.
+
+The garment production pipeline has these 18 stages in order:
+1. Costing Approval (accounts)
+2. Order Confirmation (merchandising)
+3. Fabric & Accessory PR (purchase)
+4. Lab Dip Approval (sampling)
+5. Fit / Size Set Sample (sampling)
+6. PP Sample Submission (sampling)
+7. Production File Handover (merchandising)
+8. Fabric In-House (store)
+9. Trims In-House (store)
+10. R&D (production)
+11. Production Planning (production)
+12. Cutting (cutting)
+13. Stitching (stitching)
+14. Finishing & QC (finishing)
+15. PP Sample Approval (buyer)
+16. Final Inspection (quality)
+17. Packing (packing)
+18. Ex-Factory / Dispatch (shipping)
+
+Keep responses concise and practical. Use bullet points for lists. When asked about delays, be specific about which orders and stages. For action commands (like "mark cutting done for ST-101"), output a JSON action block at the end of your response in this exact format:
+###ACTION###
+{"type":"stage_update","orderId":"ORD-XXX","stageId":"cutting","status":"done"}
+###END_ACTION###
+
+Only output the ACTION block when the user is clearly requesting a change, not when asking questions. Valid stage IDs: cost_approve, order_confirm, fabric_acc_pr, lab_dip_approve, fit_sample, pp_sample, prod_file, fabric_inhouse, trims_inhouse, rnd, production_plan, cutting, stitching, finishing_qc, pp_approve, final_inspection, packing, ex_factory.
+Valid statuses: pending, active, done, delayed, issue.`;
+
+// AI Chat endpoint
+app.post('/api/ai/chat', async (req, res) => {
+  if (!CLAUDE_API_KEY) return res.status(400).json({ error: 'Claude AI not configured. Ask admin to set CLAUDE_API_KEY environment variable on Render.' });
+
+  const { message, userName, userDept } = req.body;
+  if (!message) return res.status(400).json({ error: 'Message required' });
+
+  try {
+    const orderContext = buildOrderContext();
+
+    // Check if user is asking about a specific order
+    let specificOrder = '';
+    const orderMatch = message.match(/ORD-[A-Z0-9]+/i) || message.match(/\b([A-Z]{1,5}[-\s]?\d{2,6})\b/i);
+    if (orderMatch) {
+      const searchTerm = orderMatch[0].toUpperCase();
+      const found = Object.values(db.orders).find(o =>
+        o.id.toUpperCase() === searchTerm ||
+        o.styleNo.toUpperCase() === searchTerm ||
+        o.poNumber.toUpperCase() === searchTerm
+      );
+      if (found) specificOrder = '\n\nDetailed info for referenced order:\n' + buildOrderDetail(found);
+    }
+
+    const buyerInsights = JSON.stringify(computeBuyerInsights(), null, 2);
+
+    const userMsg = `User: ${userName || 'Unknown'} (Dept: ${userDept || 'unknown'})
+Message: ${message}
+
+Current Orders Summary:
+${orderContext}
+${specificOrder}
+
+Buyer Intelligence Data:
+${buyerInsights.slice(0, 2000)}`;
+
+    const reply = await callClaude(AI_SYSTEM_PROMPT, userMsg);
+
+    // Check for action commands in the response
+    let action = null;
+    const actionMatch = reply.match(/###ACTION###\s*([\s\S]*?)\s*###END_ACTION###/);
+    if (actionMatch) {
+      try {
+        action = JSON.parse(actionMatch[1].trim());
+      } catch (e) { /* ignore parse errors */ }
+    }
+
+    // Clean response (remove action block from visible text)
+    const cleanReply = reply.replace(/###ACTION###[\s\S]*?###END_ACTION###/, '').trim();
+
+    res.json({ ok: true, reply: cleanReply, action });
+  } catch (e) {
+    console.error('AI chat error:', e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// AI Execute action (from natural language commands)
+app.post('/api/ai/execute-action', async (req, res) => {
+  const { action, userName, userRole } = req.body;
+  if (!action || !action.type) return res.status(400).json({ error: 'Invalid action' });
+
+  if (action.type === 'stage_update') {
+    const { orderId, stageId, status, notes } = action;
+    const order = db.orders[orderId];
+    if (!order) return res.status(404).json({ error: `Order ${orderId} not found` });
+    if (!order.stages[stageId]) return res.status(400).json({ error: `Invalid stage ${stageId}` });
+
+    if (userRole === 'admin') {
+      applyStageChange(orderId, stageId, status, undefined, status === 'done' ? new Date().toISOString().split('T')[0] : undefined, notes || '', userName + ' (via AI)');
+      return res.json({ ok: true, approved: true, message: `Updated ${stageId} to ${status} for ${order.buyer} - ${order.styleNo}` });
+    } else {
+      // Queue for approval
+      const pendingId = 'PC-' + Date.now().toString(36).toUpperCase();
+      const stageInfo = ORDER_STAGES.find(s => s.id === stageId);
+      const pending = {
+        id: pendingId, orderId, stageId,
+        stageLabel: stageInfo ? stageInfo.label : stageId,
+        buyer: order.buyer, styleNo: order.styleNo,
+        changes: { status, actualDate: status === 'done' ? new Date().toISOString().split('T')[0] : undefined, notes: notes || '' },
+        currentValues: { ...order.stages[stageId] },
+        requestedBy: userName + ' (via AI)', requestedAt: new Date().toISOString(), status: 'pending'
+      };
+      db.pendingChanges.push(pending);
+      saveData();
+      io.emit('pending-change', pending);
+      return res.json({ ok: true, approved: false, message: `Change queued for admin approval` });
+    }
+  }
+
+  res.status(400).json({ error: 'Unknown action type' });
+});
+
+// Smart Delay Detection
+app.get('/api/ai/delay-check', async (req, res) => {
+  const orders = Object.values(db.orders);
+  const today = new Date();
+  const alerts = [];
+
+  for (const o of orders) {
+    // Check if ex-factory is approaching but progress is low
+    if (o.exFactoryDate) {
+      const exDate = new Date(o.exFactoryDate);
+      const daysLeft = Math.round((exDate - today) / 86400000);
+      const doneStages = ORDER_STAGES.filter(s => o.stages[s.id] && o.stages[s.id].status === 'done').length;
+      const pct = Math.round(doneStages / ORDER_STAGES.length * 100);
+
+      // Alert if less than 30 days and less than 70% done
+      if (daysLeft > 0 && daysLeft <= 30 && pct < 70) {
+        alerts.push({
+          type: 'deadline_risk', severity: daysLeft <= 14 ? 'critical' : 'warning',
+          orderId: o.id, buyer: o.buyer, styleNo: o.styleNo,
+          message: `${o.buyer} - ${o.styleNo}: Only ${pct}% done with ${daysLeft} days to ex-factory (${o.exFactoryDate})`,
+          daysLeft, progress: pct
+        });
+      }
+
+      // Alert if already past ex-factory and not complete
+      if (daysLeft < 0 && pct < 100) {
+        alerts.push({
+          type: 'overdue', severity: 'critical',
+          orderId: o.id, buyer: o.buyer, styleNo: o.styleNo,
+          message: `${o.buyer} - ${o.styleNo}: OVERDUE by ${Math.abs(daysLeft)} days! Only ${pct}% complete.`,
+          daysLeft, progress: pct
+        });
+      }
+    }
+
+    // Check for stages marked as delayed or issue
+    ORDER_STAGES.forEach(s => {
+      const stg = o.stages[s.id];
+      if (stg && stg.status === 'delayed') {
+        alerts.push({
+          type: 'stage_delayed', severity: 'warning',
+          orderId: o.id, buyer: o.buyer, styleNo: o.styleNo,
+          message: `${o.buyer} - ${o.styleNo}: ${s.label} is delayed${stg.notes ? ' — ' + stg.notes : ''}`,
+          stageId: s.id, stageLabel: s.label
+        });
+      }
+      if (stg && stg.status === 'issue') {
+        alerts.push({
+          type: 'stage_issue', severity: 'critical',
+          orderId: o.id, buyer: o.buyer, styleNo: o.styleNo,
+          message: `${o.buyer} - ${o.styleNo}: Issue at ${s.label}${stg.notes ? ' — ' + stg.notes : ''}`,
+          stageId: s.id, stageLabel: s.label
+        });
+      }
+
+      // Check if target date passed but stage not done
+      if (stg && stg.targetDate && stg.status !== 'done') {
+        const targetDate = new Date(stg.targetDate);
+        const daysOverdue = Math.round((today - targetDate) / 86400000);
+        if (daysOverdue > 0) {
+          alerts.push({
+            type: 'target_missed', severity: daysOverdue > 7 ? 'critical' : 'warning',
+            orderId: o.id, buyer: o.buyer, styleNo: o.styleNo,
+            message: `${o.buyer} - ${o.styleNo}: ${s.label} target date missed by ${daysOverdue} days`,
+            stageId: s.id, stageLabel: s.label, daysOverdue
+          });
+        }
+      }
+    });
+  }
+
+  // Sort: critical first, then by days
+  alerts.sort((a, b) => {
+    if (a.severity !== b.severity) return a.severity === 'critical' ? -1 : 1;
+    return (a.daysLeft || 0) - (b.daysLeft || 0);
+  });
+
+  // If Claude API is available, get AI summary
+  let aiSummary = null;
+  if (CLAUDE_API_KEY && alerts.length > 0) {
+    try {
+      const alertText = alerts.slice(0, 20).map(a => `[${a.severity.toUpperCase()}] ${a.message}`).join('\n');
+      aiSummary = await callClaude(
+        'You are a garment production manager AI. Analyze these delay alerts and provide a brief priority action plan. Be specific about which orders need attention first and what actions to take. Keep it under 200 words.',
+        `Current delay alerts:\n${alertText}\n\nTotal active orders: ${orders.length}`
+      );
+    } catch (e) { /* AI summary optional */ }
+  }
+
+  res.json({ alerts, aiSummary, total: alerts.length, critical: alerts.filter(a => a.severity === 'critical').length });
+});
+
+app.get('/api/ai/status', (req, res) => {
+  res.json({ configured: !!CLAUDE_API_KEY, model: CLAUDE_MODEL });
+});
+
 server.listen(PORT, () => {
   console.log(`\n  Style Tracker running at http://localhost:${PORT}`);
   console.log(`  Admin PIN: ${db.settings.adminPin} (change this in Admin settings)`);

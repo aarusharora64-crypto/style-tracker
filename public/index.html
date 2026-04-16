@@ -1740,6 +1740,96 @@ body{
 .no-pending{text-align:center;padding:30px;color:var(--text-secondary);font-size:13px;}
 
 /* ═══════════════════════════════════════════
+   AI CHAT WIDGET
+   ═══════════════════════════════════════════ */
+.ai-fab{
+  position:fixed;bottom:80px;right:16px;width:54px;height:54px;border-radius:50%;
+  background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;border:none;
+  font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(109,40,217,0.35);
+  z-index:400;display:flex;align-items:center;justify-content:center;
+  transition:all 0.2s;
+}
+.ai-fab:hover{transform:scale(1.08);box-shadow:0 6px 20px rgba(109,40,217,0.45);}
+.ai-fab .ai-badge{
+  position:absolute;top:-2px;right:-2px;background:var(--danger);color:#fff;
+  font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;
+  display:none;align-items:center;justify-content:center;padding:0 4px;
+}
+.ai-fab .ai-badge.show{display:flex;}
+
+.ai-panel{
+  position:fixed;bottom:0;right:0;width:380px;max-width:100vw;height:70vh;max-height:600px;
+  background:var(--surface);border-radius:16px 16px 0 0;box-shadow:-4px -4px 24px rgba(0,0,0,0.15);
+  z-index:500;display:none;flex-direction:column;overflow:hidden;
+}
+.ai-panel.open{display:flex;}
+.ai-panel-header{
+  background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;
+  padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+}
+.ai-panel-header .ai-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.ai-panel-header .ai-close{background:rgba(255,255,255,0.2);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;}
+.ai-panel-header .ai-close:hover{background:rgba(255,255,255,0.3);}
+
+.ai-tabs{display:flex;gap:4px;padding:8px 12px;background:var(--bg);flex-shrink:0;}
+.ai-tab{
+  flex:1;padding:6px 10px;border:none;border-radius:8px;background:var(--surface);
+  font-size:12px;cursor:pointer;font-weight:600;color:var(--text-secondary);
+  transition:all 0.15s;font-family:inherit;text-align:center;
+}
+.ai-tab.active{background:#8b5cf6;color:#fff;}
+.ai-tab:hover:not(.active){background:var(--border);}
+
+.ai-content{flex:1;overflow-y:auto;display:none;flex-direction:column;}
+.ai-content.active{display:flex;}
+
+.ai-messages{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;}
+.ai-msg{padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.5;max-width:90%;}
+.ai-msg.user{background:var(--primary);color:#fff;align-self:flex-end;border-bottom-right-radius:4px;}
+.ai-msg.ai{background:var(--bg);color:var(--text);align-self:flex-start;border-bottom-left-radius:4px;}
+.ai-msg.ai .ai-action-btn{
+  display:inline-block;margin-top:6px;padding:4px 12px;border-radius:5px;border:1px solid #8b5cf6;
+  background:#f5f3ff;color:#8b5cf6;font-size:11px;cursor:pointer;font-weight:600;transition:all 0.15s;
+}
+.ai-msg.ai .ai-action-btn:hover{background:#8b5cf6;color:#fff;}
+.ai-msg.system{background:#fef3c7;color:#92400e;align-self:center;font-size:12px;text-align:center;border-radius:12px;}
+.ai-typing{padding:10px 14px;color:var(--text-secondary);font-size:12px;font-style:italic;}
+
+.ai-input-area{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border);flex-shrink:0;background:var(--surface);}
+.ai-input-area input{
+  flex:1;padding:10px 14px;border:1px solid var(--border);border-radius:20px;font-size:13px;
+  outline:none;font-family:inherit;
+}
+.ai-input-area input:focus{border-color:#8b5cf6;box-shadow:0 0 0 3px rgba(139,92,246,0.1);}
+.ai-input-area button{
+  width:38px;height:38px;border-radius:50%;border:none;background:#8b5cf6;color:#fff;
+  font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all 0.15s;flex-shrink:0;
+}
+.ai-input-area button:hover{background:#7c3aed;}
+
+/* AI Alerts */
+.ai-alerts{flex:1;overflow-y:auto;padding:12px;}
+.ai-alert-summary{background:linear-gradient(135deg,#fef3c7,#fde68a);border-radius:10px;padding:14px;margin-bottom:12px;font-size:13px;line-height:1.5;color:#78350f;}
+.ai-alert-card{
+  padding:12px;border-radius:8px;margin-bottom:8px;font-size:12px;
+  border-left:3px solid var(--warning);background:var(--bg);
+}
+.ai-alert-card.critical{border-left-color:var(--danger);background:#fef2f2;}
+.ai-alert-card .alert-title{font-weight:600;color:var(--text);margin-bottom:4px;}
+.ai-alert-card .alert-body{color:var(--text-secondary);}
+.ai-alert-card .alert-meta{font-size:11px;color:var(--text-secondary);margin-top:4px;display:flex;gap:8px;}
+.ai-no-alerts{text-align:center;padding:30px;color:var(--text-secondary);font-size:13px;}
+.ai-loading{text-align:center;padding:20px;color:var(--text-secondary);font-size:13px;}
+.ai-not-configured{text-align:center;padding:30px;color:var(--text-secondary);font-size:13px;}
+.ai-not-configured a{color:#8b5cf6;font-weight:600;}
+
+@media(max-width:600px){
+  .ai-panel{width:100%;height:80vh;border-radius:16px 16px 0 0;}
+  .ai-fab{bottom:70px;right:10px;width:48px;height:48px;font-size:20px;}
+}
+
+/* ═══════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════ */
 @media(max-width:768px){
@@ -2395,6 +2485,7 @@ function loginAs(uid){
     loadPendingChanges();
   }
   if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();
+  initAI();
 
   socket=io();
   socket.emit('login',me.id);
@@ -2438,6 +2529,8 @@ function logout(){
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('adminTab').style.display='none';
   document.getElementById('approvalsTab').style.display='none';
+  document.getElementById('aiFab').style.display='none';
+  document.getElementById('aiPanel').classList.remove('open');
   document.getElementById('cmsgs').innerHTML='<div class="msg msg-system">Type a style number and update to get started</div>';
   init();
 }
@@ -3098,6 +3191,149 @@ function fmtTime(d){return new Date(d).toLocaleString('en-IN',{day:'2-digit',mon
 function shortTime(d){return new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});}
 
 // ═══════════════════════════════════════════
+// AI ASSISTANT
+// ═══════════════════════════════════════════
+let aiConfigured=false;
+let _pendingAction=null;
+
+async function initAI(){
+  try{
+    const r=await(await fetch('/api/ai/status')).json();
+    aiConfigured=r.configured;
+    if(aiConfigured){
+      document.getElementById('aiFab').style.display='flex';
+    }else{
+      // Still show fab but with "not configured" state
+      document.getElementById('aiFab').style.display='flex';
+    }
+  }catch(e){}
+}
+
+function toggleAI(){
+  const panel=document.getElementById('aiPanel');
+  panel.classList.toggle('open');
+  if(panel.classList.contains('open')&&!aiConfigured){
+    document.getElementById('aiMsgs').innerHTML='<div class="ai-msg system">AI is not configured yet. Ask your admin to add the CLAUDE_API_KEY environment variable on Render to enable AI features. The delay alerts still work without AI!</div>';
+  }
+}
+
+function switchAITab(tab){
+  document.querySelectorAll('.ai-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.ai-content').forEach(c=>c.classList.remove('active'));
+  document.querySelector(`.ai-tab[onclick*="${tab}"]`).classList.add('active');
+  document.getElementById(tab==='chat'?'aiChatContent':'aiAlertsContent').classList.add('active');
+  if(tab==='alerts')loadDelayAlerts();
+}
+
+async function sendAI(){
+  const inp=document.getElementById('aiInput');
+  const msg=inp.value.trim();
+  if(!msg)return;
+  inp.value='';
+
+  const msgsEl=document.getElementById('aiMsgs');
+  msgsEl.innerHTML+=`<div class="ai-msg user">${esc(msg)}</div>`;
+  msgsEl.innerHTML+=`<div class="ai-typing" id="aiTyping">Thinking...</div>`;
+  msgsEl.scrollTop=msgsEl.scrollHeight;
+
+  try{
+    const r=await(await fetch('/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,userName:me?me.name:'',userDept:me?me.dept:''})})).json();
+
+    document.getElementById('aiTyping')?.remove();
+
+    if(r.ok){
+      // Format reply with markdown-like formatting
+      let html=esc(r.reply).replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>');
+
+      // Add action button if there's a pending action
+      if(r.action){
+        _pendingAction=r.action;
+        html+=`<br><button class="ai-action-btn" onclick="executeAIAction()">✅ Apply this change</button>`;
+      }
+
+      msgsEl.innerHTML+=`<div class="ai-msg ai">${html}</div>`;
+    }else{
+      msgsEl.innerHTML+=`<div class="ai-msg system">${esc(r.error||'AI error occurred')}</div>`;
+    }
+  }catch(e){
+    document.getElementById('aiTyping')?.remove();
+    msgsEl.innerHTML+=`<div class="ai-msg system">Error: ${esc(e.message)}</div>`;
+  }
+  msgsEl.scrollTop=msgsEl.scrollHeight;
+}
+
+async function executeAIAction(){
+  if(!_pendingAction)return;
+  try{
+    const r=await(await fetch('/api/ai/execute-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:_pendingAction,userName:me?me.name:'AI',userRole:me?me.role:'operator'})})).json();
+
+    const msgsEl=document.getElementById('aiMsgs');
+    if(r.ok){
+      if(r.approved){
+        msgsEl.innerHTML+=`<div class="ai-msg system">✅ ${r.message}</div>`;
+        // Refresh orders
+        fetch('/api/orders').then(x=>x.json()).then(d=>{ORDERS=d||{};renderOrders();});
+      }else{
+        msgsEl.innerHTML+=`<div class="ai-msg system">🔒 ${r.message}</div>`;
+      }
+    }else{
+      msgsEl.innerHTML+=`<div class="ai-msg system">Error: ${esc(r.error||'Failed')}</div>`;
+    }
+    _pendingAction=null;
+    msgsEl.scrollTop=msgsEl.scrollHeight;
+  }catch(e){
+    const msgsEl=document.getElementById('aiMsgs');
+    msgsEl.innerHTML+=`<div class="ai-msg system">Error: ${esc(e.message)}</div>`;
+    msgsEl.scrollTop=msgsEl.scrollHeight;
+  }
+}
+
+async function loadDelayAlerts(){
+  const el=document.getElementById('aiAlerts');
+  el.innerHTML='<div class="ai-loading">Analyzing orders for delays...</div>';
+
+  try{
+    const r=await(await fetch('/api/ai/delay-check')).json();
+
+    let html='';
+    if(r.aiSummary){
+      html+=`<div class="ai-alert-summary"><strong>🤖 AI Analysis:</strong><br>${esc(r.aiSummary).replace(/\n/g,'<br>')}</div>`;
+    }
+
+    html+=`<div style="display:flex;gap:8px;margin-bottom:12px;">
+      <div style="flex:1;background:#fef2f2;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:var(--danger)">${r.critical}</div>
+        <div style="font-size:10px;color:var(--text-secondary);font-weight:600;text-transform:uppercase">Critical</div>
+      </div>
+      <div style="flex:1;background:#fefce8;border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:var(--warning)">${r.total-r.critical}</div>
+        <div style="font-size:10px;color:var(--text-secondary);font-weight:600;text-transform:uppercase">Warnings</div>
+      </div>
+    </div>`;
+
+    if(!r.alerts.length){
+      html+='<div class="ai-no-alerts">All orders are on track! No delays detected.</div>';
+    }else{
+      r.alerts.slice(0,30).forEach(a=>{
+        html+=`<div class="ai-alert-card ${a.severity}">
+          <div class="alert-title">${a.severity==='critical'?'🚨':'⚠️'} ${esc(a.buyer)} — ${esc(a.styleNo)}</div>
+          <div class="alert-body">${esc(a.message)}</div>
+          <div class="alert-meta">
+            <span>${a.type.replace(/_/g,' ')}</span>
+            ${a.daysLeft!==undefined?'<span>'+a.daysLeft+' days</span>':''}
+            ${a.progress!==undefined?'<span>'+a.progress+'% done</span>':''}
+          </div>
+        </div>`;
+      });
+    }
+
+    el.innerHTML=html;
+  }catch(e){
+    el.innerHTML=`<div class="ai-not-configured">Error loading alerts: ${esc(e.message)}</div>`;
+  }
+}
+
+// ═══════════════════════════════════════════
 // APPROVAL WORKFLOW
 // ═══════════════════════════════════════════
 async function loadPendingChanges(){
@@ -3215,6 +3451,36 @@ function dismissPWA() {
   document.getElementById('pwaInstallBanner').classList.remove('show');
 }
 </script>
+
+<!-- AI Chat Widget -->
+<button class="ai-fab" id="aiFab" onclick="toggleAI()" style="display:none" title="AI Assistant">
+  🤖<span class="ai-badge" id="aiBadge"></span>
+</button>
+
+<div class="ai-panel" id="aiPanel">
+  <div class="ai-panel-header">
+    <div class="ai-title">🤖 AI Assistant</div>
+    <button class="ai-close" onclick="toggleAI()">✕</button>
+  </div>
+  <div class="ai-tabs">
+    <button class="ai-tab active" onclick="switchAITab('chat')">Chat</button>
+    <button class="ai-tab" onclick="switchAITab('alerts')">Delay Alerts</button>
+  </div>
+  <div class="ai-content active" id="aiChatContent">
+    <div class="ai-messages" id="aiMsgs">
+      <div class="ai-msg system">Hi! I'm your AI assistant. Ask me about orders, delays, or tell me to update stages using natural language.</div>
+    </div>
+    <div class="ai-input-area">
+      <input type="text" id="aiInput" placeholder="Ask about orders or give commands..." onkeydown="if(event.key==='Enter')sendAI()" />
+      <button onclick="sendAI()">➤</button>
+    </div>
+  </div>
+  <div class="ai-content" id="aiAlertsContent">
+    <div class="ai-alerts" id="aiAlerts">
+      <div class="ai-loading">Loading delay analysis...</div>
+    </div>
+  </div>
+</div>
 
 <!-- PWA Install Banner -->
 <div class="pwa-install-banner" id="pwaInstallBanner">
