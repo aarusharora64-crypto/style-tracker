@@ -1549,6 +1549,30 @@ body{
 }
 
 /* ═══════════════════════════════════════════
+   BUYER INSIGHTS
+   ═══════════════════════════════════════════ */
+#insightsView{background:var(--bg);overflow-y:auto;}
+.buyer-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;}
+.buyer-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.buyer-card-header h4{font-size:16px;font-weight:700;color:var(--primary);margin:0;}
+.buyer-card-header .buyer-stats{font-size:12px;color:var(--text-secondary);}
+.buyer-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px;}
+.buyer-metric{background:var(--bg);border-radius:8px;padding:10px;text-align:center;}
+.buyer-metric .metric-val{font-size:20px;font-weight:700;color:var(--primary);}
+.buyer-metric .metric-label{font-size:11px;color:var(--text-secondary);margin-top:2px;}
+.buyer-timeline{margin-top:10px;}
+.buyer-timeline h5{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text);}
+.stage-avg-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;}
+.stage-avg-row .stage-name{flex:0 0 160px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.stage-avg-bar{flex:1;height:16px;background:var(--bg);border-radius:8px;overflow:hidden;position:relative;}
+.stage-avg-fill{height:100%;border-radius:8px;background:linear-gradient(90deg,var(--primary),var(--primary-light));transition:width 0.3s;}
+.stage-avg-days{flex:0 0 50px;text-align:right;font-weight:600;color:var(--text);font-size:11px;}
+.confidence-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;}
+.confidence-low{background:#fef3c7;color:#92400e;}
+.confidence-med{background:#dbeafe;color:#1e40af;}
+.confidence-high{background:#d1fae5;color:#065f46;}
+
+/* ═══════════════════════════════════════════
    ADMIN VIEW
    ═══════════════════════════════════════════ */
 #adminView{
@@ -1879,7 +1903,11 @@ body{
     <h3 id="orderModalTitle">Create Order</h3>
     <div class="form-field">
       <label>Buyer Name</label>
-      <input type="text" id="ordBuyer" placeholder="e.g. Zara, H&M" />
+      <input type="text" id="ordBuyer" placeholder="e.g. Zara, H&M" oninput="checkBuyerInsight()" />
+      <div id="buyerSuggest" style="display:none;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;color:#065f46;">
+        <strong>AI Suggestion:</strong> <span id="buyerSuggestText"></span>
+        <button onclick="applyBuyerSuggestion()" style="margin-left:8px;font-size:11px;background:#059669;color:#fff;border:none;border-radius:4px;padding:3px 8px;cursor:pointer">Apply Timeline</button>
+      </div>
     </div>
     <div class="form-field">
       <label>Style Number</label>
@@ -1928,6 +1956,7 @@ body{
       <button class="tab-btn" data-v="dash" onclick="sw('dash')">Dashboard</button>
       <button class="tab-btn" data-v="styles" onclick="sw('styles')">Styles<span class="badge" id="bdgS"></span></button>
       <button class="tab-btn" data-v="orders" onclick="sw('orders')">Orders<span class="badge" id="bdgO"></span></button>
+      <button class="tab-btn" data-v="insights" onclick="sw('insights')">Insights</button>
       <button class="tab-btn" data-v="notif" onclick="toggleNP()">Alerts<span class="badge" id="bdgN"></span></button>
       <button class="tab-btn" data-v="admin" onclick="sw('admin')" id="adminTab" style="display:none">Admin</button>
     </div>
@@ -2075,6 +2104,17 @@ body{
   </div>
 
   <!-- ADMIN VIEW -->
+  <div id="insightsView" class="view">
+    <div class="admin-container">
+      <div class="admin-section">
+        <h3>Buyer Intelligence</h3>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">The app learns from every order. The more orders you complete, the better the timeline predictions become.</p>
+        <div id="buyerInsightsList"></div>
+        <div id="noInsights" class="no-results" style="display:none">No buyer data yet. Complete a few order stages and insights will start appearing here.</div>
+      </div>
+    </div>
+  </div>
+
   <div id="adminView" class="view">
     <div class="admin-container">
       <div class="admin-section">
@@ -2497,6 +2537,53 @@ function exportCSV(){
 }
 
 // ═══════════════════════════════════════════
+// BUYER INSIGHTS
+// ═══════════════════════════════════════════
+async function loadInsights(){
+  try{
+    const data=await(await fetch('/api/buyer-insights')).json();
+    const list=document.getElementById('buyerInsightsList');
+    const noData=document.getElementById('noInsights');
+    const buyers=Object.values(data);
+    if(!buyers.length){list.innerHTML='';noData.style.display='';return;}
+    noData.style.display='none';
+
+    // Find max avg days for scaling bars
+    let maxDays=1;
+    buyers.forEach(b=>{Object.values(b.avgStageDays||{}).forEach(d=>{if(d>maxDays)maxDays=d;});});
+
+    list.innerHTML=buyers.sort((a,b)=>b.totalOrders-a.totalOrders).map(b=>{
+      const conf=b.dataPoints>=20?'high':b.dataPoints>=5?'med':'low';
+      const confLabel=conf==='high'?'High confidence':conf==='med'?'Learning':'Just started';
+      const stageRows=ORDER_STAGES.filter(s=>b.avgStageDays[s.id]!==undefined).map(s=>{
+        const days=b.avgStageDays[s.id];
+        const pct=Math.min(100,Math.round(days/maxDays*100));
+        return `<div class="stage-avg-row">
+          <span class="stage-name">${s.icon} ${s.label}</span>
+          <div class="stage-avg-bar"><div class="stage-avg-fill" style="width:${pct}%"></div></div>
+          <span class="stage-avg-days">${days} days</span>
+        </div>`;
+      }).join('');
+
+      return `<div class="buyer-card">
+        <div class="buyer-card-header">
+          <h4>${esc(b.buyer)}</h4>
+          <span class="confidence-badge confidence-${conf}">${confLabel} (${b.dataPoints} data points)</span>
+        </div>
+        <div class="buyer-metrics">
+          <div class="buyer-metric"><div class="metric-val">${b.totalOrders}</div><div class="metric-label">Total Orders</div></div>
+          <div class="buyer-metric"><div class="metric-val">${b.completedOrders}</div><div class="metric-label">Completed</div></div>
+          <div class="buyer-metric"><div class="metric-val">${b.avgQuantity?b.avgQuantity.toLocaleString():'-'}</div><div class="metric-label">Avg Quantity</div></div>
+          <div class="buyer-metric"><div class="metric-val">${b.avgLeadTime?b.avgLeadTime+' days':'-'}</div><div class="metric-label">Avg Lead Time</div></div>
+        </div>
+        ${b.styles.length?`<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Styles: ${b.styles.slice(0,10).map(s=>'<span style="background:var(--bg);padding:2px 6px;border-radius:4px;margin-right:4px">'+esc(s)+'</span>').join('')}</div>`:''}
+        ${stageRows?`<div class="buyer-timeline"><h5>Average Timeline (days from order start)</h5>${stageRows}</div>`:''}
+      </div>`;
+    }).join('');
+  }catch(e){console.error('Insights error:',e);}
+}
+
+// ═══════════════════════════════════════════
 // ADMIN
 // ═══════════════════════════════════════════
 async function addUser(){
@@ -2619,6 +2706,7 @@ function sw(v){
   if(v==='chat'){document.getElementById('cmsgs').scrollTop=9e9;unreadC=0;updB('bdgC',0);}
   if(v==='dash')renderDash();
   if(v==='styles')renderSty();
+  if(v==='insights')loadInsights();
   if(v==='admin'){renderTeam();loadDeptPasswords();}
   if(v==='orders')renderOrders();
 }
@@ -2771,6 +2859,9 @@ function checkEmail(){
     else{btn.textContent='Not Configured';setTimeout(()=>{btn.textContent='Check Inbox';btn.disabled=false;},3000);}
   }).catch(()=>{btn.textContent='Error';setTimeout(()=>{btn.textContent='Check Inbox';btn.disabled=false;},3000);});
 }
+let _buyerSuggestionData=null;
+let _buyerCheckTimer=null;
+
 function openOrderModal(){
   document.getElementById('ordCurrentId').value='';
   document.getElementById('orderModalTitle').textContent='Create Order';
@@ -2782,7 +2873,41 @@ function openOrderModal(){
   document.getElementById('ordMerchant').value='';
   document.getElementById('ordPO').value='';
   document.getElementById('deleteSection').style.display='none';
+  document.getElementById('buyerSuggest').style.display='none';
+  _buyerSuggestionData=null;
   document.getElementById('orderModal').classList.add('open');
+}
+
+function checkBuyerInsight(){
+  clearTimeout(_buyerCheckTimer);
+  const buyer=document.getElementById('ordBuyer').value.trim();
+  const sugBox=document.getElementById('buyerSuggest');
+  if(buyer.length<2){sugBox.style.display='none';return;}
+  _buyerCheckTimer=setTimeout(async()=>{
+    try{
+      const r=await(await fetch('/api/suggest-timeline/'+encodeURIComponent(buyer))).json();
+      if(r.available){
+        _buyerSuggestionData=r;
+        const stageCount=Object.keys(r.suggested).length;
+        let text=`Based on ${r.basedOnOrders} past order(s), predicted ${stageCount} stage dates.`;
+        if(r.avgLeadTime)text+=` Avg lead time: ${r.avgLeadTime} days.`;
+        document.getElementById('buyerSuggestText').textContent=text;
+        sugBox.style.display='block';
+      }else{sugBox.style.display='none';_buyerSuggestionData=null;}
+    }catch(e){sugBox.style.display='none';}
+  },500);
+}
+
+function applyBuyerSuggestion(){
+  if(!_buyerSuggestionData||!_buyerSuggestionData.suggested)return;
+  // Store for use after order creation
+  window._pendingSuggestion=_buyerSuggestionData.suggested;
+  const exFactory=_buyerSuggestionData.suggested.ex_factory;
+  if(exFactory&&!document.getElementById('ordExFactory').value){
+    document.getElementById('ordExFactory').value=exFactory;
+  }
+  document.getElementById('buyerSuggestText').textContent='Timeline will be applied when order is saved!';
+  document.getElementById('buyerSuggest').querySelector('button').style.display='none';
 }
 
 function closeOrderModal(){
@@ -2822,8 +2947,16 @@ async function saveOrder(){
     const method=id?'PUT':'POST';
     const r=await(await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(order)})).json();
     if(r.ok||r.id){
-      if(!id)ORDERS[r.id]=r;
-      else ORDERS[id]={...ORDERS[id],...order};
+      const orderId=r.order?r.order.id:(id||r.id);
+      if(!id&&r.order)ORDERS[orderId]=r.order;
+      else if(id)ORDERS[id]={...ORDERS[id],...order};
+      // Apply AI suggested target dates for new orders
+      if(!id&&window._pendingSuggestion){
+        for(const[stageId,targetDate]of Object.entries(window._pendingSuggestion)){
+          try{await fetch('/api/orders/'+orderId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,targetDate,userName:me?me.name:'System'})});}catch(e){}
+        }
+        window._pendingSuggestion=null;
+      }
       renderOrders();
       closeOrderModal();
     }else alert('Error saving order');

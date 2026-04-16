@@ -224,6 +224,139 @@ app.delete('/api/orders/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Buyer Analytics / Self-Learning Engine ────────────
+function computeBuyerInsights() {
+  const buyers = {};
+  const orders = Object.values(db.orders);
+
+  for (const order of orders) {
+    const buyerKey = (order.buyer || '').trim().toLowerCase();
+    if (!buyerKey) continue;
+
+    if (!buyers[buyerKey]) {
+      buyers[buyerKey] = {
+        buyer: order.buyer,
+        totalOrders: 0,
+        completedOrders: 0,
+        avgQuantity: 0,
+        totalQuantity: 0,
+        stageDurations: {},  // stageId -> [days taken]
+        stageToStage: {},    // "stageA->stageB" -> [days]
+        avgLeadTime: null,   // order creation to ex-factory (days)
+        leadTimes: [],
+        styles: new Set(),
+        lastOrder: null,
+      };
+    }
+
+    const b = buyers[buyerKey];
+    b.totalOrders++;
+    b.totalQuantity += order.quantity || 0;
+    if (order.styleNo) b.styles.add(order.styleNo);
+
+    const createdAt = new Date(order.createdAt);
+    if (!b.lastOrder || new Date(order.createdAt) > new Date(b.lastOrder)) {
+      b.lastOrder = order.createdAt;
+    }
+
+    // Analyze stage completion times
+    let prevStageDate = createdAt;
+    let prevStageId = '_start';
+    let allDone = true;
+
+    for (const s of ORDER_STAGES) {
+      const stg = order.stages[s.id];
+      if (!stg || stg.status !== 'done' || !stg.actualDate) { allDone = false; continue; }
+
+      const doneDate = new Date(stg.actualDate);
+      if (isNaN(doneDate.getTime())) continue;
+
+      // Duration from order creation to this stage completion
+      const daysFromStart = Math.max(0, Math.round((doneDate - createdAt) / 86400000));
+      if (!b.stageDurations[s.id]) b.stageDurations[s.id] = [];
+      b.stageDurations[s.id].push(daysFromStart);
+
+      // Stage-to-stage duration
+      const key = prevStageId + '->' + s.id;
+      const gap = Math.max(0, Math.round((doneDate - prevStageDate) / 86400000));
+      if (!b.stageToStage[key]) b.stageToStage[key] = [];
+      b.stageToStage[key].push(gap);
+
+      prevStageDate = doneDate;
+      prevStageId = s.id;
+    }
+
+    // Lead time if order has ex-factory date done
+    const exStage = order.stages.ex_factory;
+    if (exStage && exStage.status === 'done' && exStage.actualDate) {
+      const exDate = new Date(exStage.actualDate);
+      const lead = Math.round((exDate - createdAt) / 86400000);
+      if (lead > 0) b.leadTimes.push(lead);
+      b.completedOrders++;
+    }
+  }
+
+  // Compute averages
+  const result = {};
+  for (const [key, b] of Object.entries(buyers)) {
+    const avgStageDays = {};
+    for (const [sid, durations] of Object.entries(b.stageDurations)) {
+      avgStageDays[sid] = Math.round(durations.reduce((a, c) => a + c, 0) / durations.length);
+    }
+
+    result[key] = {
+      buyer: b.buyer,
+      totalOrders: b.totalOrders,
+      completedOrders: b.completedOrders,
+      avgQuantity: b.totalOrders ? Math.round(b.totalQuantity / b.totalOrders) : 0,
+      avgStageDays,
+      avgLeadTime: b.leadTimes.length ? Math.round(b.leadTimes.reduce((a, c) => a + c, 0) / b.leadTimes.length) : null,
+      styles: [...b.styles],
+      lastOrder: b.lastOrder,
+      dataPoints: Object.values(b.stageDurations).reduce((a, c) => a + c.length, 0),
+    };
+  }
+  return result;
+}
+
+// Suggest target dates for a buyer's new order
+function suggestTimeline(buyerName, startDate) {
+  const insights = computeBuyerInsights();
+  const buyerKey = (buyerName || '').trim().toLowerCase();
+  const buyerData = insights[buyerKey];
+  if (!buyerData || !buyerData.avgStageDays || Object.keys(buyerData.avgStageDays).length === 0) {
+    return null;  // Not enough data
+  }
+
+  const start = new Date(startDate || new Date());
+  const suggested = {};
+  for (const s of ORDER_STAGES) {
+    const avgDays = buyerData.avgStageDays[s.id];
+    if (avgDays !== undefined) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + avgDays);
+      suggested[s.id] = d.toISOString().split('T')[0];
+    }
+  }
+  return { suggested, avgLeadTime: buyerData.avgLeadTime, basedOnOrders: buyerData.totalOrders };
+}
+
+app.get('/api/buyer-insights', (req, res) => {
+  res.json(computeBuyerInsights());
+});
+
+app.get('/api/buyer-insights/:buyer', (req, res) => {
+  const insights = computeBuyerInsights();
+  const key = (req.params.buyer || '').trim().toLowerCase();
+  res.json(insights[key] || null);
+});
+
+app.get('/api/suggest-timeline/:buyer', (req, res) => {
+  const result = suggestTimeline(req.params.buyer, req.query.startDate);
+  if (!result) return res.json({ available: false, message: 'Not enough historical data for this buyer yet' });
+  res.json({ available: true, ...result });
+});
+
 // ── Admin APIs ─────────────────────────────────────────
 function isAdmin(pin) {
   return pin === db.settings.adminPin;
