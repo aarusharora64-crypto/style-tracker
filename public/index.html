@@ -137,6 +137,19 @@ body{
   color:var(--text-secondary);
   text-transform:capitalize;
 }
+.login-form{display:flex;flex-direction:column;gap:14px;}
+.login-form .form-field{display:flex;flex-direction:column;gap:4px;}
+.login-form .form-field label{font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;}
+.login-form .form-field input,.login-form .form-field select{
+  padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;
+  background:var(--surface);color:var(--text);outline:none;transition:border-color 0.2s;
+}
+.login-form .form-field input:focus,.login-form .form-field select:focus{border-color:var(--primary);}
+.login-submit-btn{
+  width:100%;padding:12px;border:none;border-radius:10px;background:var(--primary);color:#fff;
+  font-size:15px;font-weight:600;cursor:pointer;transition:background 0.2s;font-family:inherit;
+}
+.login-submit-btn:hover{background:var(--primary-light);}
 .la-link{
   text-align:center;
   margin-top:18px;
@@ -1824,8 +1837,25 @@ body{
 <div class="login-screen" id="loginScreen">
   <div class="login-card">
     <h2 id="loginTitle">Style Tracker</h2>
-    <p class="sub">Select your name to start</p>
-    <div class="ulist" id="userList"></div>
+    <p class="sub">Enter your details to login</p>
+    <div class="login-form">
+      <div class="form-field">
+        <label>Your Name</label>
+        <input type="text" id="loginName" placeholder="e.g. Rahul Sharma" autocomplete="name" />
+      </div>
+      <div class="form-field">
+        <label>Department</label>
+        <select id="loginDept">
+          <option value="">-- Select Department --</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Department Password</label>
+        <input type="password" id="loginPass" placeholder="Enter department password" autocomplete="off" />
+      </div>
+      <div id="loginErr" class="msg-error"></div>
+      <button class="btn-submit login-submit-btn" onclick="deptLogin()">Login</button>
+    </div>
     <div class="la-link">Admin? <a onclick="showPin()">Manage team</a></div>
   </div>
 </div>
@@ -2114,12 +2144,19 @@ body{
       </div>
 
       <div class="admin-section">
-        <h3>Change PIN</h3>
+        <h3>Change Admin PIN</h3>
         <div class="admin-row">
           <input type="password" id="setP" placeholder="New PIN" maxlength="10" />
           <button class="btn-primary" onclick="savePin()">Change</button>
         </div>
         <div id="setMsg2" class="msg-success"></div>
+      </div>
+
+      <div class="admin-section">
+        <h3>Department Passwords</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Share the department password with team members so they can log in. Each department has its own password.</p>
+        <div id="deptPwdList"></div>
+        <div id="deptPwdMsg" class="msg-success"></div>
       </div>
 
       <div class="admin-section" style="border:1px solid var(--danger);border-radius:10px;background:#fff9f8">
@@ -2197,20 +2234,46 @@ const STAGES=['cutting','stitching','finishing','packing','shipped','issue'];
 // ═══════════════════════════════════════════
 async function init(){
   try{
-    const[users,settings]=await Promise.all([fetch('/api/users').then(r=>r.json()),fetch('/api/settings').then(r=>r.json())]);
+    const[users,settings,depts]=await Promise.all([
+      fetch('/api/users').then(r=>r.json()),
+      fetch('/api/settings').then(r=>r.json()),
+      fetch('/api/dept-list').then(r=>r.json())
+    ]);
     allU=users;
     document.getElementById('loginTitle').textContent=document.title=settings.companyName||'Style Tracker';
-    renderLogin();
-  }catch(e){console.error('Init error:',e);renderLogin();}
+    populateDeptDropdown(depts);
+  }catch(e){console.error('Init error:',e);}
 }
 
-function renderLogin(){
-  const L=document.getElementById('userList');
-  if(!allU.length){L.innerHTML='<div class="no-results">No users yet. Ask admin to add team members.</div>';return;}
-  L.innerHTML=allU.map(u=>{const i=ini(u.name),c=DC[u.dept]||'#666';
-    return `<button class="ubtn" onclick="loginAs('${u.id}')"><div class="av" style="background:${c}">${i}</div><div><div class="un">${esc(u.name)}</div><div class="ud">${deptLabel(u.dept)} · ${u.role}</div></div></button>`;
-  }).join('');
+function populateDeptDropdown(depts){
+  const sel=document.getElementById('loginDept');
+  sel.innerHTML='<option value="">-- Select Department --</option>';
+  depts.forEach(d=>{
+    const opt=document.createElement('option');
+    opt.value=d;opt.textContent=deptLabel(d);
+    sel.appendChild(opt);
+  });
 }
+
+async function deptLogin(){
+  const name=document.getElementById('loginName').value.trim();
+  const dept=document.getElementById('loginDept').value;
+  const password=document.getElementById('loginPass').value;
+  const errEl=document.getElementById('loginErr');
+  errEl.classList.remove('show');
+  if(!name){errEl.textContent='Please enter your name';errEl.classList.add('show');return;}
+  if(!dept){errEl.textContent='Please select your department';errEl.classList.add('show');return;}
+  if(!password){errEl.textContent='Please enter the department password';errEl.classList.add('show');return;}
+  try{
+    const r=await(await fetch('/api/dept-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,dept,password})})).json();
+    if(r.ok){
+      allU=await fetch('/api/users').then(x=>x.json());
+      loginAs(r.user.id);
+    }else{errEl.textContent=r.error||'Wrong password';errEl.classList.add('show');}
+  }catch(e){errEl.textContent='Connection error';errEl.classList.add('show');}
+}
+
+document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')deptLogin();});
 
 function showPin(){document.getElementById('pinModal').classList.add('open');document.getElementById('pinInp').focus();}
 function closePin(){document.getElementById('pinModal').classList.remove('open');document.getElementById('pinInp').value='';document.getElementById('pinErr').classList.remove('show');}
@@ -2508,6 +2571,32 @@ async function clearAll(){
   try{await fetch('/api/admin/clear-messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPin})});}catch(e){console.error('Clear error:',e);}
 }
 
+async function loadDeptPasswords(){
+  try{
+    const pwds=await(await fetch('/api/admin/dept-passwords')).json();
+    const list=document.getElementById('deptPwdList');
+    if(!list)return;
+    const depts=Object.keys(pwds).filter(d=>d!=='admin'&&d!=='all');
+    list.innerHTML=depts.map(d=>`
+      <div class="admin-row" style="margin-bottom:8px;align-items:center">
+        <span style="flex:1.2;font-size:13px;font-weight:600;color:var(--text)">${deptLabel(d)}</span>
+        <input type="text" id="dpwd_${d}" value="${pwds[d]||''}" style="flex:1.5;font-size:13px;padding:8px" />
+        <button class="btn-primary" onclick="saveDeptPwd('${d}')" style="padding:8px 12px;font-size:12px">Save</button>
+      </div>
+    `).join('');
+  }catch(e){console.error('Load dept pwd error:',e);}
+}
+
+async function saveDeptPwd(dept){
+  const pwd=document.getElementById('dpwd_'+dept).value.trim();
+  if(!pwd){showM('deptPwdMsg','Password cannot be empty','err');return;}
+  try{
+    const r=await(await fetch('/api/admin/dept-passwords',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPin,dept,password:pwd})})).json();
+    if(r.ok)showM('deptPwdMsg',deptLabel(dept)+' password updated!','ok');
+    else showM('deptPwdMsg','Failed: '+r.error,'err');
+  }catch(e){showM('deptPwdMsg','Error saving','err');}
+}
+
 function showM(id,msg,type){
   const e=document.getElementById(id);
   if(!e)return;
@@ -2530,7 +2619,7 @@ function sw(v){
   if(v==='chat'){document.getElementById('cmsgs').scrollTop=9e9;unreadC=0;updB('bdgC',0);}
   if(v==='dash')renderDash();
   if(v==='styles')renderSty();
-  if(v==='admin')renderTeam();
+  if(v==='admin'){renderTeam();loadDeptPasswords();}
   if(v==='orders')renderOrders();
 }
 

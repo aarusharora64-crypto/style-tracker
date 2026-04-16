@@ -50,6 +50,22 @@ let db = loadData();
 if (!db.settings) db.settings = { adminPin: DEFAULT_ADMIN_PIN, companyName: 'Style Tracker' };
 if (!db.users) db.users = [{ id: 'admin', name: 'Admin', role: 'admin', dept: 'all', pin: DEFAULT_ADMIN_PIN }];
 if (!db.orders) db.orders = {};
+if (!db.deptPasswords) db.deptPasswords = {};
+
+// Default department passwords (admin can change these)
+const DEFAULT_DEPT_PASSWORDS = {
+  merchandising: 'merch123', sampling: 'sample123', accounts: 'acc123',
+  purchase: 'purchase123', 'fabric-purchase': 'fabric123', trims: 'trims123',
+  store: 'store123', production: 'prod123', cutting: 'cut123',
+  stitching: 'stitch123', embroidery: 'emb123', printing: 'print123',
+  washing: 'wash123', finishing: 'finish123', quality: 'qc123',
+  packing: 'pack123', shipping: 'ship123', admin: DEFAULT_ADMIN_PIN, all: DEFAULT_ADMIN_PIN
+};
+// Initialize dept passwords if empty
+if (Object.keys(db.deptPasswords).length === 0) {
+  db.deptPasswords = { ...DEFAULT_DEPT_PASSWORDS };
+  saveData();
+}
 
 // ── Order Process Stages ──────────────────────────────
 const ORDER_STAGES = [
@@ -130,6 +146,25 @@ app.get('/api/users', (req, res) => {
 app.get('/api/data', (req, res) => res.json({ styles: db.styles }));
 app.get('/api/online', (req, res) => res.json([...onlineUsers.values()]));
 app.get('/api/settings', (req, res) => res.json({ companyName: db.settings.companyName }));
+app.get('/api/dept-list', (req, res) => res.json(Object.keys(db.deptPasswords).filter(d => d !== 'admin' && d !== 'all')));
+
+// Department login - verify password for a department
+app.post('/api/dept-login', (req, res) => {
+  const { name, dept, password } = req.body;
+  if (!name || !dept || !password) return res.status(400).json({ error: 'Name, department and password required' });
+  const deptPwd = db.deptPasswords[dept];
+  if (!deptPwd || deptPwd !== password) return res.json({ ok: false, error: 'Wrong department password' });
+  // Find or create the user
+  let user = db.users.find(u => u.name.toLowerCase() === name.toLowerCase() && u.dept === dept);
+  if (!user) {
+    const id = name.toLowerCase().replace(/[^a-z0-9]/g, '') + '_' + Date.now().toString(36);
+    user = { id, name, role: 'operator', dept };
+    db.users.push(user);
+    saveData();
+    io.emit('users-updated', db.users.map(u => ({ id: u.id, name: u.name, role: u.role, dept: u.dept })));
+  }
+  res.json({ ok: true, user: { id: user.id, name: user.name, role: user.role, dept: user.dept } });
+});
 app.get('/api/order-stages', (req, res) => res.json(ORDER_STAGES));
 app.get('/api/orders', (req, res) => res.json(db.orders));
 
@@ -235,6 +270,20 @@ app.post('/api/admin/settings', (req, res) => {
   if (!isAdmin(req.body.currentPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
   if (req.body.newPin) db.settings.adminPin = req.body.newPin;
   if (req.body.companyName) db.settings.companyName = req.body.companyName;
+  saveData();
+  res.json({ ok: true });
+});
+
+// Department password management
+app.get('/api/admin/dept-passwords', (req, res) => {
+  res.json(db.deptPasswords);
+});
+
+app.post('/api/admin/dept-passwords', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const { dept, password } = req.body;
+  if (!dept || !password) return res.status(400).json({ error: 'Department and password required' });
+  db.deptPasswords[dept] = password;
   saveData();
   res.json({ ok: true });
 });
