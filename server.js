@@ -15,9 +15,9 @@ const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
 
 // ── Email IMAP Config ─────────────────────────────────
-const EMAIL_USER = process.env.EMAIL_USER || 'orders@internetexportsindia.com';
+const EMAIL_USER = process.env.EMAIL_USER || 'internetexportsorders@rediffmail.com';
 const EMAIL_PASS = process.env.EMAIL_PASS || '';  // Email password
-const EMAIL_HOST = process.env.EMAIL_HOST || 'imap.rediffmailpro.com';
+const EMAIL_HOST = process.env.EMAIL_HOST || 'imap.rediffmail.com';
 const EMAIL_PORT = parseInt(process.env.EMAIL_PORT) || 993;
 const EMAIL_CHECK_INTERVAL = parseInt(process.env.EMAIL_CHECK_INTERVAL) || 60000; // 1 min
 
