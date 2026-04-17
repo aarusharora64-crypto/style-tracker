@@ -2196,6 +2196,437 @@ body{
   cursor:pointer;
   padding:4px;
 }
+
+/* ═══════════════════════════════════════════
+   WORKFLOW COMPONENTS
+   ═══════════════════════════════════════════ */
+.workflow-activity-section{
+  background:var(--surface);
+  border-radius:12px;
+  padding:20px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.08);
+  margin-bottom:16px;
+}
+.workflow-activity-section h4{
+  font-size:13px;
+  font-weight:600;
+  color:var(--text-secondary);
+  text-transform:uppercase;
+  letter-spacing:0.3px;
+  margin-bottom:14px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+}
+.workflow-activity-section h4 .icon{
+  font-size:17px;
+}
+
+.live-activity-feed{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  max-height:450px;
+  overflow-y:auto;
+}
+.live-activity-item{
+  display:flex;
+  gap:12px;
+  padding:10px;
+  background:var(--bg);
+  border-radius:8px;
+  border-left:3px solid;
+  font-size:12px;
+  transition:all 0.2s ease;
+}
+.live-activity-item:hover{
+  background:var(--border);
+}
+.live-activity-item.costing{border-left-color:#22c55e}
+.live-activity-item.po{border-left-color:#3b82f6}
+.live-activity-item.inventory{border-left-color:#f59e0b}
+.live-activity-item.sample{border-left-color:#8b5cf6}
+.live-activity-item.shipment{border-left-color:#ef4444}
+.live-activity-item.other{border-left-color:#9ca3af}
+
+.activity-icon-badge{
+  width:32px;
+  height:32px;
+  min-width:32px;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:14px;
+  font-weight:600;
+}
+.live-activity-item.costing .activity-icon-badge{background:#dcfce7;color:#22c55e}
+.live-activity-item.po .activity-icon-badge{background:#dbeafe;color:#3b82f6}
+.live-activity-item.inventory .activity-icon-badge{background:#fef3c7;color:#f59e0b}
+.live-activity-item.sample .activity-icon-badge{background:#ede9fe;color:#8b5cf6}
+.live-activity-item.shipment .activity-icon-badge{background:#fee2e2;color:#ef4444}
+.live-activity-item.other .activity-icon-badge{background:#f3f4f6;color:#6b7280}
+
+.activity-content{
+  flex:1;
+}
+.activity-description{
+  color:var(--text);
+  font-weight:500;
+  margin-bottom:2px;
+}
+.activity-order-ref{
+  color:var(--primary);
+  font-weight:600;
+  font-size:11px;
+}
+.activity-timestamp{
+  color:var(--text-secondary);
+  font-size:11px;
+  margin-top:4px;
+}
+.live-activity-empty{
+  text-align:center;
+  padding:30px;
+  color:var(--text-secondary);
+  font-size:13px;
+}
+
+.order-timeline-section{
+  background:var(--surface);
+  border-radius:12px;
+  padding:20px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.08);
+  margin-bottom:16px;
+}
+.order-timeline-section h4{
+  font-size:13px;
+  font-weight:600;
+  color:var(--text-secondary);
+  text-transform:uppercase;
+  letter-spacing:0.3px;
+  margin-bottom:14px;
+}
+
+.timeline-vertical{
+  position:relative;
+  padding-left:30px;
+}
+.timeline-vertical::before{
+  content:'';
+  position:absolute;
+  left:8px;
+  top:0;
+  bottom:0;
+  width:2px;
+  background:var(--border);
+}
+
+.timeline-event{
+  position:relative;
+  margin-bottom:16px;
+  padding-bottom:12px;
+}
+.timeline-event:last-child{
+  margin-bottom:0;
+  padding-bottom:0;
+}
+.timeline-event::before{
+  content:'';
+  position:absolute;
+  left:-28px;
+  top:2px;
+  width:12px;
+  height:12px;
+  border-radius:50%;
+  border:2px solid var(--surface);
+  background:currentColor;
+  box-shadow:0 0 0 2px var(--border);
+}
+
+.timeline-event.costing::before{color:#22c55e}
+.timeline-event.po::before{color:#3b82f6}
+.timeline-event.inventory::before{color:#f59e0b}
+.timeline-event.sample::before{color:#8b5cf6}
+.timeline-event.shipment::before{color:#ef4444}
+.timeline-event.other::before{color:#9ca3af}
+
+.timeline-event-time{
+  font-size:11px;
+  color:var(--text-secondary);
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:0.3px;
+  margin-bottom:2px;
+}
+.timeline-event-text{
+  font-size:13px;
+  color:var(--text);
+  margin-bottom:2px;
+}
+.timeline-event-user{
+  font-size:11px;
+  color:var(--primary);
+  font-weight:500;
+}
+.timeline-empty{
+  text-align:center;
+  padding:30px;
+  color:var(--text-secondary);
+  font-size:13px;
+}
+
+.approval-queue-section{
+  background:var(--surface);
+  border-radius:12px;
+  padding:20px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.08);
+  margin-bottom:16px;
+}
+.approval-queue-section h4{
+  font-size:13px;
+  font-weight:600;
+  color:var(--text-secondary);
+  text-transform:uppercase;
+  letter-spacing:0.3px;
+  margin-bottom:14px;
+}
+
+.approval-card{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:14px;
+  background:var(--bg);
+  border-radius:8px;
+  border-left:3px solid;
+  margin-bottom:8px;
+  font-size:12px;
+}
+.approval-card.cost-update{border-left-color:#22c55e}
+.approval-card.po-approval{border-left-color:#3b82f6}
+.approval-card.excess-receive{border-left-color:#f59e0b}
+.approval-card.extra-pcs{border-left-color:#8b5cf6}
+.approval-card.other{border-left-color:#9ca3af}
+
+.approval-info{
+  flex:1;
+}
+.approval-type{
+  font-weight:600;
+  color:var(--text);
+  margin-bottom:2px;
+  text-transform:capitalize;
+}
+.approval-desc{
+  color:var(--text-secondary);
+  font-size:11px;
+  margin-bottom:4px;
+}
+.approval-meta{
+  font-size:10px;
+  color:var(--text-secondary);
+}
+
+.approval-actions{
+  display:flex;
+  gap:6px;
+  margin-left:12px;
+}
+.approval-btn{
+  padding:6px 12px;
+  border:none;
+  border-radius:6px;
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all 0.2s;
+  white-space:nowrap;
+}
+.approval-btn.approve{
+  background:#dcfce7;
+  color:#22c55e;
+}
+.approval-btn.approve:hover{
+  background:#22c55e;
+  color:#fff;
+}
+.approval-btn.reject{
+  background:#fee2e2;
+  color:#ef4444;
+}
+.approval-btn.reject:hover{
+  background:#ef4444;
+  color:#fff;
+}
+.approval-empty{
+  text-align:center;
+  padding:30px;
+  color:var(--text-secondary);
+  font-size:13px;
+}
+
+.costing-view-section{
+  background:var(--surface);
+  border-radius:12px;
+  padding:20px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.08);
+  margin-bottom:16px;
+}
+.costing-view-section h4{
+  font-size:13px;
+  font-weight:600;
+  color:var(--text-secondary);
+  text-transform:uppercase;
+  letter-spacing:0.3px;
+  margin-bottom:14px;
+}
+
+.costing-breakdown{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+  margin-bottom:16px;
+}
+@media(max-width:768px){
+  .costing-breakdown{
+    grid-template-columns:1fr;
+  }
+}
+
+.costing-group{
+  background:var(--bg);
+  border-radius:8px;
+  padding:12px;
+  border:1px solid var(--border);
+}
+.costing-group-title{
+  font-size:11px;
+  font-weight:600;
+  color:var(--text-secondary);
+  text-transform:uppercase;
+  letter-spacing:0.3px;
+  margin-bottom:8px;
+  padding-bottom:8px;
+  border-bottom:1px solid var(--border);
+}
+
+.costing-row{
+  display:flex;
+  justify-content:space-between;
+  padding:6px 0;
+  font-size:12px;
+  border-bottom:1px solid rgba(0,0,0,0.05);
+}
+.costing-row:last-child{
+  border-bottom:none;
+}
+.costing-label{
+  color:var(--text);
+  font-weight:500;
+}
+.costing-value{
+  color:var(--text-secondary);
+  font-family:monospace;
+  text-align:right;
+  min-width:80px;
+}
+.costing-row.total{
+  font-weight:600;
+  color:var(--primary);
+  padding-top:8px;
+  border-top:2px solid var(--border);
+  background:rgba(7,94,84,0.02);
+}
+
+.wastage-table{
+  width:100%;
+  font-size:11px;
+  border-collapse:collapse;
+}
+.wastage-table th,
+.wastage-table td{
+  padding:6px;
+  text-align:left;
+  border-bottom:1px solid var(--border);
+}
+.wastage-table th{
+  font-weight:600;
+  color:var(--text-secondary);
+  background:rgba(0,0,0,0.02);
+}
+.wastage-table td{
+  color:var(--text);
+}
+.wastage-table .pct{
+  text-align:center;
+  color:var(--text-secondary);
+  font-family:monospace;
+}
+
+.costing-form{
+  background:var(--bg);
+  border-radius:8px;
+  padding:14px;
+  border:1px dashed var(--border);
+}
+.costing-form-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:10px;
+  margin-bottom:10px;
+}
+.costing-form-row:last-child{
+  margin-bottom:0;
+}
+.costing-form-field{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.costing-form-field label{
+  font-size:11px;
+  font-weight:600;
+  color:var(--text-secondary);
+  text-transform:uppercase;
+  letter-spacing:0.3px;
+}
+.costing-form-field input,
+.costing-form-field select{
+  padding:8px;
+  border:1px solid var(--border);
+  border-radius:6px;
+  font-size:12px;
+  outline:none;
+}
+.costing-form-field input:focus,
+.costing-form-field select:focus{
+  border-color:var(--primary);
+  box-shadow:0 0 0 3px rgba(7,94,84,0.1);
+}
+
+.costing-submit-btn{
+  width:100%;
+  padding:10px;
+  background:var(--primary);
+  color:#fff;
+  border:none;
+  border-radius:7px;
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all 0.2s;
+  margin-top:10px;
+}
+.costing-submit-btn:hover{
+  background:var(--primary-light);
+}
+
+.inv-tab-btn.active{
+  color:var(--primary);
+  border-bottom:2px solid var(--primary);
+}
+
 </style>
 </head>
 <body>
@@ -2398,6 +2829,14 @@ body{
           <div class="activity-feed" id="actFeed"><div class="no-results">No activity yet</div></div>
         </div>
       </div>
+
+      <!-- WORKFLOW ACTIVITY FEED -->
+      <div class="workflow-activity-section">
+        <h4><span class="icon">⚡</span> Workflow Activity (Live)</h4>
+        <div class="live-activity-feed" id="workflowActivityFeed">
+          <div class="live-activity-empty">Loading activity...</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2474,6 +2913,15 @@ body{
         <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">Stage updates from team members require your approval before they take effect.</p>
         <div id="pendingList"></div>
       </div>
+
+      <!-- APPROVAL QUEUE SECTION -->
+      <div class="approval-queue-section">
+        <h4>⏳ Approval Queue</h4>
+        <div id="approvalQueueList">
+          <div class="approval-empty">No pending approvals</div>
+        </div>
+      </div>
+
       <div class="admin-section">
         <h3>Recently Processed</h3>
         <div id="processedList" style="max-height:300px;overflow-y:auto"></div>
@@ -2846,11 +3294,12 @@ body{
   <div id="inventoryView" class="view">
     <div class="dash-container">
       <h3 style="font-size:18px;font-weight:700;color:var(--primary);margin-bottom:16px">Inventory Management</h3>
-      <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
+      <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px;flex-wrap:wrap">
         <button class="inv-tab-btn active" data-t="fabric" onclick="switchInvTab('fabric')" style="padding:8px 16px;border:none;background:none;color:var(--primary);font-weight:600;cursor:pointer;border-bottom:2px solid var(--primary)">Fabric Inward</button>
         <button class="inv-tab-btn" data-t="trims" onclick="switchInvTab('trims')" style="padding:8px 16px;border:none;background:none;color:var(--text-secondary);font-weight:600;cursor:pointer">Trim Inward</button>
         <button class="inv-tab-btn" data-t="issues" onclick="switchInvTab('issues')" style="padding:8px 16px;border:none;background:none;color:var(--text-secondary);font-weight:600;cursor:pointer">Issue Log</button>
         <button class="inv-tab-btn" data-t="balance" onclick="switchInvTab('balance')" style="padding:8px 16px;border:none;background:none;color:var(--text-secondary);font-weight:600;cursor:pointer">Balance</button>
+        <button class="inv-tab-btn" data-t="costing" onclick="switchInvTab('costing')" style="padding:8px 16px;border:none;background:none;color:var(--text-secondary);font-weight:600;cursor:pointer">Costing</button>
       </div>
 
       <div id="inv-fabric" class="inv-section">
@@ -2909,6 +3358,79 @@ body{
 
       <div id="inv-balance" class="inv-section" style="display:none;max-height:calc(100vh - 240px);overflow-y:auto">
         <div id="balanceList" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
+
+      <!-- COSTING SECTION -->
+      <div id="inv-costing" class="inv-section" style="display:none;max-height:calc(100vh - 240px);overflow-y:auto">
+        <div class="costing-view-section">
+          <h4>💰 Fabric Costing</h4>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px">
+            <div><label style="font-size:12px;color:var(--text-secondary);font-weight:600">Select Order</label><select id="costingOrderId" onchange="loadOrderCosting()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px"><option value="">-- Select Order --</option></select></div>
+            <div style="display:flex;align-items:flex-end"><button onclick="openCostingForm()" style="width:100%;padding:8px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600">+ Add New</button></div>
+          </div>
+          <div id="costingViewContainer"></div>
+        </div>
+
+        <!-- COSTING FORM MODAL -->
+        <div id="costingFormModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:500;align-items:center;justify-content:center;flex-direction:column">
+          <div style="background:var(--surface);border-radius:12px;padding:24px;width:90%;max-width:700px;max-height:90vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,0.2)">
+            <h3 style="color:var(--primary);margin-bottom:16px">Add Fabric Costing</h3>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:12px">
+              <div class="costing-form-field">
+                <label>Order ID</label>
+                <select id="cfOrderId" style="padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px"><option value="">-- Select --</option></select>
+              </div>
+              <div class="costing-form-field">
+                <label>Order Quantity (PCS)</label>
+                <input type="number" id="cfOrderQty" placeholder="0" style="padding:8px;border:1px solid var(--border);border-radius:6px" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:12px">
+              <div class="costing-form-field">
+                <label>Greige Cost (INR/MTR)</label>
+                <input type="number" id="cfGreigeCost" placeholder="0.00" step="0.01" style="padding:8px;border:1px solid var(--border);border-radius:6px" />
+              </div>
+              <div class="costing-form-field">
+                <label>Shrinkage %</label>
+                <input type="number" id="cfShrinkage" placeholder="0" step="0.1" style="padding:8px;border:1px solid var(--border);border-radius:6px" />
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:12px">
+              <div class="costing-form-field">
+                <label>Process Rate (INR/MTR)</label>
+                <input type="number" id="cfProcessRate" placeholder="0.00" step="0.01" style="padding:8px;border:1px solid var(--border);border-radius:6px" />
+              </div>
+              <div class="costing-form-field">
+                <label>Wastage %</label>
+                <input type="number" id="cfWastage" placeholder="0" step="0.1" style="padding:8px;border:1px solid var(--border);border-radius:6px" />
+              </div>
+            </div>
+            <div style="margin-bottom:12px">
+              <label style="font-size:12px;color:var(--text-secondary);font-weight:600">Wastage Breakdown</label>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-top:6px">
+                <div><label style="font-size:11px">Table %</label><input type="number" id="cfWastageTable" placeholder="0" step="0.1" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:12px" /></div>
+                <div><label style="font-size:11px">Charak %</label><input type="number" id="cfWastageCharak" placeholder="0" step="0.1" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:12px" /></div>
+                <div><label style="font-size:11px">Residual %</label><input type="number" id="cfWastageResidual" placeholder="0" step="0.1" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:12px" /></div>
+                <div><label style="font-size:11px">Extra %</label><input type="number" id="cfWastageExtra" placeholder="0" step="0.1" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:12px" /></div>
+                <div><label style="font-size:11px">Cutting %</label><input type="number" id="cfWastageCutting" placeholder="0" step="0.1" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;font-size:12px" /></div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:12px">
+              <div class="costing-form-field">
+                <label>GST %</label>
+                <input type="number" id="cfGST" placeholder="5" step="0.1" style="padding:8px;border:1px solid var(--border);border-radius:6px" />
+              </div>
+              <div class="costing-form-field">
+                <label>Other Charges (INR)</label>
+                <input type="number" id="cfOtherCharges" placeholder="0.00" step="0.01" style="padding:8px;border:1px solid var(--border);border-radius:6px" />
+              </div>
+            </div>
+            <div class="costing-form-row" style="margin-bottom:16px;justify-content:flex-end;gap:10px">
+              <button onclick="closeCostingForm()" style="padding:10px 20px;border:1px solid var(--border);border-radius:8px;background:white;cursor:pointer;font-weight:600">Cancel</button>
+              <button onclick="saveCostingData()" style="padding:10px 20px;border:none;border-radius:8px;background:var(--primary);color:white;font-weight:600;cursor:pointer">Save Costing</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -4754,6 +5276,14 @@ async function loadInventory() {
         } catch(e) {}
       }
       list.innerHTML = html;
+    } else if (invTab === 'costing') {
+      const ordRes = await fetch('/api/orders');
+      const orders = await ordRes.json();
+      const sel = document.getElementById('costingOrderId');
+      sel.innerHTML = '<option value="">-- Select Order --</option>' + Object.entries(orders).map(([id, o]) =>
+        `<option value="${id}">${o.buyer} - ${o.styleNo}</option>`
+      ).join('');
+      document.getElementById('costingViewContainer').innerHTML = '<div class="timeline-empty">Select an order to view costing</div>';
     }
   } catch(e) { console.error('Error loading inventory:', e); }
 }
@@ -5198,6 +5728,389 @@ document.addEventListener('DOMContentLoaded', function() {
   <button class="pwa-install-btn" onclick="installPWA()">Install</button>
   <button class="pwa-dismiss" onclick="dismissPWA()">&times;</button>
 </div>
+
+<!-- WORKFLOW ACTIVITY AND APPROVALS FUNCTIONS -->
+<script>
+// ═══════════════════════════════════════════
+// WORKFLOW ACTIVITY FEED
+// ═══════════════════════════════════════════
+async function loadWorkflowActivity() {
+  try {
+    const res = await fetch('/api/activity');
+    if (!res.ok) {
+      document.getElementById('workflowActivityFeed').innerHTML = '<div class="live-activity-empty">Unable to load activity</div>';
+      return;
+    }
+    const activities = await res.json();
+    const feed = document.getElementById('workflowActivityFeed');
+
+    if (!activities || activities.length === 0) {
+      feed.innerHTML = '<div class="live-activity-empty">No workflow activity yet</div>';
+      return;
+    }
+
+    const typeIcons = {
+      costing: '💰', po: '📋', inventory: '📦',
+      sample: '👔', shipment: '🚚', other: '📝'
+    };
+
+    feed.innerHTML = activities.slice(-20).reverse().map(act => {
+      const type = act.type || 'other';
+      const icon = typeIcons[type] || '📝';
+      const time = act.timestamp ? new Date(act.timestamp).toLocaleString() : new Date().toLocaleString();
+      const shortTime = new Date(act.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      return `
+        <div class="live-activity-item ${type}">
+          <div class="activity-icon-badge">${icon}</div>
+          <div class="activity-content">
+            <div class="activity-description">${act.description || 'Activity'}</div>
+            ${act.orderId ? `<div class="activity-order-ref">Order: ${act.orderId}</div>` : ''}
+            <div class="activity-timestamp">${shortTime}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch(e) {
+    console.error('Error loading workflow activity:', e);
+    document.getElementById('workflowActivityFeed').innerHTML = '<div class="live-activity-empty">Error loading activity</div>';
+  }
+}
+
+// ═══════════════════════════════════════════
+// APPROVAL QUEUE
+// ═══════════════════════════════════════════
+async function loadApprovalQueue() {
+  try {
+    const res = await fetch('/api/approvals');
+    if (!res.ok) return;
+    const approvals = await res.json();
+    const list = document.getElementById('approvalQueueList');
+
+    if (!approvals || approvals.length === 0) {
+      list.innerHTML = '<div class="approval-empty">No pending approvals</div>';
+      return;
+    }
+
+    const typeLabels = {
+      'cost_update': 'Cost Update',
+      'po_approval': 'PO Approval',
+      'excess_receive': 'Excess Receive',
+      'extra_pcs': 'Extra PCS',
+      'other': 'Approval'
+    };
+
+    list.innerHTML = approvals.filter(a => a.status === 'pending').map(a => {
+      const type = a.type || 'other';
+      const label = typeLabels[type] || type;
+      const date = a.requestedAt ? new Date(a.requestedAt).toLocaleDateString() : '';
+      return `
+        <div class="approval-card ${type}">
+          <div class="approval-info">
+            <div class="approval-type">${label}</div>
+            <div class="approval-desc">${a.description || 'Awaiting approval'}</div>
+            <div class="approval-meta">
+              ${a.requestedBy ? 'Requested by: ' + a.requestedBy + ' | ' : ''}${date}
+            </div>
+          </div>
+          <div class="approval-actions">
+            <button class="approval-btn approve" onclick="approveRequest('${a.id}')">Approve</button>
+            <button class="approval-btn reject" onclick="rejectRequest('${a.id}')">Reject</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch(e) {
+    console.error('Error loading approval queue:', e);
+  }
+}
+
+async function approveRequest(approvalId) {
+  try {
+    const res = await fetch(`/api/approvals/${approvalId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'approved', approvedBy: curUser })
+    });
+    if (res.ok) {
+      showToast('Approved', 'Request approved successfully', false);
+      loadApprovalQueue();
+      renderApprovals();
+    }
+  } catch(e) { console.error('Error approving request:', e); }
+}
+
+async function rejectRequest(approvalId) {
+  const reason = prompt('Reason for rejection:');
+  if (!reason) return;
+  try {
+    const res = await fetch(`/api/approvals/${approvalId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'rejected', rejectedBy: curUser, reason })
+    });
+    if (res.ok) {
+      showToast('Rejected', 'Request rejected', false);
+      loadApprovalQueue();
+      renderApprovals();
+    }
+  } catch(e) { console.error('Error rejecting request:', e); }
+}
+
+// ═══════════════════════════════════════════
+// ORDER TIMELINE
+// ═══════════════════════════════════════════
+function renderOrderTimeline(orderId) {
+  const order = ORDERS[orderId];
+  if (!order) return;
+
+  const activities = (order.activities || []).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const timeline = document.getElementById('orderTimelineContainer');
+
+  if (!timeline) return;
+
+  if (activities.length === 0) {
+    timeline.innerHTML = '<div class="timeline-empty">No activities for this order</div>';
+    return;
+  }
+
+  const typeIcons = {
+    costing: '💰', po: '📋', inventory: '📦',
+    sample: '👔', shipment: '🚚', production: '⚙️', other: '📝'
+  };
+
+  timeline.innerHTML = `
+    <div class="timeline-vertical">
+      ${activities.map(act => {
+        const type = act.type || 'other';
+        const icon = typeIcons[type] || '📝';
+        const time = new Date(act.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        const date = new Date(act.timestamp).toLocaleDateString();
+        return `
+          <div class="timeline-event ${type}">
+            <div class="timeline-event-time">${date} ${time}</div>
+            <div class="timeline-event-text">${icon} ${act.description || 'Activity'}</div>
+            ${act.user ? `<div class="timeline-event-user">by ${act.user}</div>` : ''}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════
+// COSTING MANAGEMENT
+// ═══════════════════════════════════════════
+async function loadOrderCosting() {
+  const orderId = document.getElementById('costingOrderId').value;
+  if (!orderId) {
+    document.getElementById('costingViewContainer').innerHTML = '<div class="timeline-empty">Select an order to view costing</div>';
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/orders/${orderId}/cost-sheet`);
+    const data = await res.json();
+    const costing = data.costSheet || {};
+
+    if (!costing.greigeCost) {
+      document.getElementById('costingViewContainer').innerHTML = '<div class="timeline-empty">No costing data for this order</div>';
+      return;
+    }
+
+    const greigeCost = parseFloat(costing.greigeCost) || 0;
+    const shrinkage = parseFloat(costing.shrinkage) || 0;
+    const processRate = parseFloat(costing.processRate) || 0;
+    const wastage = parseFloat(costing.wastage) || 0;
+    const gst = parseFloat(costing.gst) || 5;
+    const otherCharges = parseFloat(costing.otherCharges) || 0;
+
+    const totalProcessRate = greigeCost + processRate;
+    const totalWithWastage = totalProcessRate * (1 + wastage / 100);
+    const totalWithGST = totalWithWastage * (1 + gst / 100) + otherCharges;
+
+    const html = `
+      <div class="costing-breakdown">
+        <div class="costing-group">
+          <div class="costing-group-title">Fabric Costing</div>
+          <div class="costing-row">
+            <span class="costing-label">Greige Cost (INR/MTR)</span>
+            <span class="costing-value">${greigeCost.toFixed(2)}</span>
+          </div>
+          <div class="costing-row">
+            <span class="costing-label">Shrinkage %</span>
+            <span class="costing-value">${shrinkage.toFixed(2)}%</span>
+          </div>
+          <div class="costing-row">
+            <span class="costing-label">Process Rate (INR/MTR)</span>
+            <span class="costing-value">${processRate.toFixed(2)}</span>
+          </div>
+          <div class="costing-row total">
+            <span class="costing-label">Total Rate</span>
+            <span class="costing-value">${totalProcessRate.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div class="costing-group">
+          <div class="costing-group-title">Charges & Taxes</div>
+          <div class="costing-row">
+            <span class="costing-label">Wastage %</span>
+            <span class="costing-value">${wastage.toFixed(2)}%</span>
+          </div>
+          <div class="costing-row">
+            <span class="costing-label">With Wastage</span>
+            <span class="costing-value">${totalWithWastage.toFixed(2)}</span>
+          </div>
+          <div class="costing-row">
+            <span class="costing-label">GST %</span>
+            <span class="costing-value">${gst.toFixed(2)}%</span>
+          </div>
+          <div class="costing-row">
+            <span class="costing-label">Other Charges</span>
+            <span class="costing-value">${otherCharges.toFixed(2)}</span>
+          </div>
+          <div class="costing-row total">
+            <span class="costing-label">Total Cost</span>
+            <span class="costing-value">${totalWithGST.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
+      ${costing.wastageBreakdown ? `
+        <div style="margin-top:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px">Wastage Breakdown</div>
+          <table class="wastage-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th class="pct">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${costing.wastageBreakdown.table ? `<tr><td>Table</td><td class="pct">${costing.wastageBreakdown.table}%</td></tr>` : ''}
+              ${costing.wastageBreakdown.charak ? `<tr><td>Charak</td><td class="pct">${costing.wastageBreakdown.charak}%</td></tr>` : ''}
+              ${costing.wastageBreakdown.residual ? `<tr><td>Residual</td><td class="pct">${costing.wastageBreakdown.residual}%</td></tr>` : ''}
+              ${costing.wastageBreakdown.extra ? `<tr><td>Extra</td><td class="pct">${costing.wastageBreakdown.extra}%</td></tr>` : ''}
+              ${costing.wastageBreakdown.cutting ? `<tr><td>Cutting</td><td class="pct">${costing.wastageBreakdown.cutting}%</td></tr>` : ''}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+    `;
+
+    document.getElementById('costingViewContainer').innerHTML = html;
+  } catch(e) {
+    console.error('Error loading costing:', e);
+    document.getElementById('costingViewContainer').innerHTML = '<div class="timeline-empty">Error loading costing data</div>';
+  }
+}
+
+function openCostingForm() {
+  document.getElementById('costingFormModal').style.display = 'flex';
+
+  // Populate order dropdown
+  const select = document.getElementById('cfOrderId');
+  select.innerHTML = '<option value="">-- Select Order --</option>' + Object.entries(ORDERS).map(([id, o]) =>
+    `<option value="${id}">${o.buyer} - ${o.styleNo}</option>`
+  ).join('');
+}
+
+function closeCostingForm() {
+  document.getElementById('costingFormModal').style.display = 'none';
+  ['cfOrderId','cfOrderQty','cfGreigeCost','cfShrinkage','cfProcessRate','cfWastage','cfWastageTable','cfWastageCharak','cfWastageResidual','cfWastageExtra','cfWastageCutting','cfGST','cfOtherCharges'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+
+async function saveCostingData() {
+  const orderId = document.getElementById('cfOrderId').value;
+  if (!orderId) { alert('Select an order'); return; }
+
+  const data = {
+    greigeCost: document.getElementById('cfGreigeCost').value,
+    shrinkage: document.getElementById('cfShrinkage').value,
+    processRate: document.getElementById('cfProcessRate').value,
+    wastage: document.getElementById('cfWastage').value,
+    gst: document.getElementById('cfGST').value || 5,
+    otherCharges: document.getElementById('cfOtherCharges').value || 0,
+    wastageBreakdown: {
+      table: document.getElementById('cfWastageTable').value,
+      charak: document.getElementById('cfWastageCharak').value,
+      residual: document.getElementById('cfWastageResidual').value,
+      extra: document.getElementById('cfWastageExtra').value,
+      cutting: document.getElementById('cfWastageCutting').value
+    }
+  };
+
+  try {
+    const res = await fetch(`/api/orders/${orderId}/cost-sheet`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (res.ok) {
+      showToast('Saved', 'Costing data saved successfully', false);
+      closeCostingForm();
+      loadOrderCosting();
+    }
+  } catch(e) { console.error('Error saving costing:', e); alert('Error saving costing'); }
+}
+
+// ═══════════════════════════════════════════
+// SOCKET.IO LISTENERS FOR REAL-TIME UPDATES
+// ═══════════════════════════════════════════
+socket.on('activityUpdate', (activity) => {
+  loadWorkflowActivity();
+});
+
+socket.on('approvalUpdate', (approval) => {
+  loadApprovalQueue();
+  renderApprovals();
+});
+
+socket.on('costingUpdate', (data) => {
+  if (document.getElementById('costingOrderId').value === data.orderId) {
+    loadOrderCosting();
+  }
+});
+
+// Load workflow components on dashboard view
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    const dashViewTab = document.querySelector('[onclick*="dashView"]');
+    if (dashViewTab) {
+      const originalClick = dashViewTab.onclick;
+      dashViewTab.onclick = function() {
+        if (originalClick) originalClick.call(this);
+        loadWorkflowActivity();
+      };
+    }
+
+    const appViewTab = document.querySelector('[onclick*="approvalsView"]');
+    if (appViewTab) {
+      const originalClick = appViewTab.onclick;
+      appViewTab.onclick = function() {
+        if (originalClick) originalClick.call(this);
+        loadApprovalQueue();
+      };
+    }
+  }, 100);
+});
+
+// Refresh activity feed periodically
+setInterval(() => {
+  if (document.getElementById('dashView').classList.contains('active')) {
+    loadWorkflowActivity();
+  }
+}, 30000);
+
+// Refresh approvals periodically
+setInterval(() => {
+  if (document.getElementById('approvalsView').classList.contains('active')) {
+    loadApprovalQueue();
+  }
+}, 30000);
+</script>
 
 </body>
 </html>

@@ -66,6 +66,9 @@ if (!db.materialIssue) db.materialIssue = [];
 if (!db.samples) db.samples = [];
 if (!db.shipments) db.shipments = {};
 if (!db.contacts) db.contacts = { buyers: {}, suppliers: {} };
+if (!db.activityLog) db.activityLog = [];
+if (!db.approvals) db.approvals = [];
+if (!db.costings) db.costings = {};
 
 // Migration: Add new fields to existing orders
 Object.values(db.orders).forEach(order => {
@@ -1828,6 +1831,297 @@ function parseOrderFromEmail(subject, body, from) {
   return { buyer, styleNo, poNumber, quantity, exFactoryDate, shipDate, orderDate, description, merchandiser, season, paymentTerms, ourRef, fobRate, currency, totalValue: totalValueAmount };
 }
 
+// ── Workflow Engine - Email Classification & Processing ──
+function classifyAndProcessEmail(subject, body, from, to, date) {
+  const combined = (subject + ' ' + body).toLowerCase();
+  const fullText = body || '';
+  const actions = [];
+
+  let emailType = 'general';
+  let extractedData = {};
+
+  // Classify email type
+  if (subject.includes('New EO:')) {
+    emailType = 'eo_alert';
+  } else if (combined.includes('fab consumption revised')) {
+    emailType = 'fab_consumption';
+  } else if (combined.includes('cash payment report')) {
+    emailType = 'cash_payment';
+  } else if (combined.includes('bank payment report')) {
+    emailType = 'bank_payment';
+  } else if (combined.includes('daily present') || combined.includes('todays absentisam')) {
+    emailType = 'attendance';
+  } else if (subject.includes('APPROVE PO')) {
+    emailType = 'po_approval';
+  } else if (subject.includes('FOR COST UPDATE') || subject.includes('COST UPDATE')) {
+    emailType = 'cost_update';
+  } else if (subject.includes('plz add') || from.includes('store5@') || from.includes('jagjit')) {
+    emailType = 'process_cost';
+  } else if (subject.includes('COURIER DETAILS')) {
+    emailType = 'courier_details';
+  } else if (subject.includes('EXCESS RECEIVE')) {
+    emailType = 'excess_receive';
+  } else if (subject.includes('PACKING LIST')) {
+    emailType = 'packing_list';
+  } else if (subject.includes('EXTRA PCS')) {
+    emailType = 'extra_pcs';
+  } else if (subject.includes('Gate pass')) {
+    emailType = 'gate_pass';
+  }
+
+  // Extract structured data by email type
+  switch (emailType) {
+    case 'eo_alert':
+      extractedData = {
+        type: 'eo_alert',
+        eoNo: subject.match(/EO[:\s]+(\d+)/i)?.[1] || '',
+        buyer: extractField(fullText, 'Buyer') || '',
+        styleNo: extractField(fullText, 'Style No') || '',
+        quantity: parseInt(extractField(fullText, 'Quantity')?.replace(/,/g, '') || 0)
+      };
+      if (extractedData.eoNo) {
+        actions.push(`EO Alert: ${extractedData.eoNo} from ${extractedData.buyer}`);
+      }
+      break;
+
+    case 'fab_consumption':
+      extractedData = {
+        type: 'fab_consumption',
+        styleNo: extractField(fullText, 'Style') || extractField(fullText, 'Style No') || '',
+        fabricQuality: extractField(fullText, 'Quality') || extractField(fullText, 'Fabric Quality') || '',
+        consumption: extractField(fullText, 'Consumption') || extractField(fullText, 'Qty') || ''
+      };
+      if (extractedData.styleNo) {
+        actions.push(`Fabric Consumption: ${extractedData.styleNo} - ${extractedData.consumption}`);
+      }
+      break;
+
+    case 'cost_update':
+      extractedData = {
+        type: 'cost_update',
+        ourRef: extractField(fullText, 'Our Ref') || extractField(fullText, 'Order Ref') || '',
+        costDetails: extractField(fullText, 'Cost') || extractField(fullText, 'Price') || '',
+        status: 'pending_approval'
+      };
+      if (extractedData.ourRef) {
+        const approval = {
+          id: 'APR-' + Date.now().toString(36).toUpperCase(),
+          type: 'cost_update',
+          ourRef: extractedData.ourRef,
+          subject: subject,
+          details: extractedData.costDetails,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          createdBy: from
+        };
+        db.approvals.push(approval);
+        actions.push(`Cost Update approval created: ${approval.id}`);
+      }
+      break;
+
+    case 'po_approval':
+      extractedData = {
+        type: 'po_approval',
+        poNumber: extractField(fullText, 'PO') || extractField(fullText, 'Order') || '',
+        status: 'pending_approval'
+      };
+      if (extractedData.poNumber) {
+        const approval = {
+          id: 'APR-' + Date.now().toString(36).toUpperCase(),
+          type: 'po_approval',
+          poNumber: extractedData.poNumber,
+          subject: subject,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          createdBy: from
+        };
+        db.approvals.push(approval);
+        actions.push(`PO Approval created: ${approval.id}`);
+      }
+      break;
+
+    case 'process_cost':
+      extractedData = {
+        type: 'process_cost',
+        styleNo: extractField(fullText, 'Style') || extractField(fullText, 'Style No') || '',
+        processor: extractField(fullText, 'Processor') || extractField(fullText, 'Process') || '',
+        rate: extractField(fullText, 'Rate') || extractField(fullText, 'Cost') || ''
+      };
+      if (extractedData.styleNo) {
+        actions.push(`Process Cost: ${extractedData.styleNo} - ${extractedData.processor} @ ${extractedData.rate}`);
+      }
+      break;
+
+    case 'courier_details':
+      extractedData = {
+        type: 'courier_details',
+        courierName: extractField(fullText, 'Courier') || extractField(fullText, 'Company') || '',
+        trackingNumber: extractField(fullText, 'Tracking') || extractField(fullText, 'AWB') || '',
+        ourRef: extractField(fullText, 'Our Ref') || extractField(fullText, 'Order Ref') || ''
+      };
+      if (extractedData.trackingNumber) {
+        actions.push(`Courier Details: ${extractedData.courierName} - Tracking: ${extractedData.trackingNumber}`);
+      }
+      break;
+
+    case 'excess_receive':
+      extractedData = {
+        type: 'excess_receive',
+        ourRef: extractField(fullText, 'Our Ref') || extractField(fullText, 'Order Ref') || '',
+        material: extractField(fullText, 'Material') || extractField(fullText, 'Item') || '',
+        excessQty: extractField(fullText, 'Excess') || extractField(fullText, 'Extra Qty') || ''
+      };
+      if (extractedData.ourRef) {
+        const approval = {
+          id: 'APR-' + Date.now().toString(36).toUpperCase(),
+          type: 'excess_receive',
+          ourRef: extractedData.ourRef,
+          material: extractedData.material,
+          quantity: extractedData.excessQty,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          createdBy: from
+        };
+        db.approvals.push(approval);
+        actions.push(`Excess Receive approval: ${approval.id}`);
+      }
+      break;
+
+    case 'extra_pcs':
+      extractedData = {
+        type: 'extra_pcs',
+        ourRef: extractField(fullText, 'Our Ref') || extractField(fullText, 'Order Ref') || '',
+        quantity: parseInt(extractField(fullText, 'Qty') || extractField(fullText, 'Pieces') || 0)
+      };
+      if (extractedData.ourRef) {
+        const approval = {
+          id: 'APR-' + Date.now().toString(36).toUpperCase(),
+          type: 'extra_pcs',
+          ourRef: extractedData.ourRef,
+          quantity: extractedData.quantity,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          createdBy: from
+        };
+        db.approvals.push(approval);
+        actions.push(`Extra Pieces approval: ${approval.id}`);
+      }
+      break;
+
+    case 'cash_payment':
+      extractedData = {
+        type: 'cash_payment',
+        amount: extractField(fullText, 'Amount') || extractField(fullText, 'Total') || '',
+        description: subject
+      };
+      if (extractedData.amount) {
+        actions.push(`Cash Payment: ${extractedData.amount}`);
+      }
+      break;
+
+    case 'bank_payment':
+      extractedData = {
+        type: 'bank_payment',
+        amount: extractField(fullText, 'Amount') || extractField(fullText, 'Total') || '',
+        reference: extractField(fullText, 'Ref') || extractField(fullText, 'Transaction') || '',
+        description: subject
+      };
+      if (extractedData.amount) {
+        actions.push(`Bank Payment: ${extractedData.amount} - ${extractedData.reference}`);
+      }
+      break;
+
+    case 'packing_list':
+      extractedData = {
+        type: 'packing_list',
+        ourRef: extractField(fullText, 'Our Ref') || extractField(fullText, 'Order Ref') || '',
+        packingNo: extractField(fullText, 'Packing') || extractField(fullText, 'PL') || ''
+      };
+      if (extractedData.packingNo) {
+        actions.push(`Packing List: ${extractedData.packingNo}`);
+      }
+      break;
+
+    case 'gate_pass':
+      extractedData = {
+        type: 'gate_pass',
+        ourRef: extractField(fullText, 'Our Ref') || extractField(fullText, 'Order Ref') || '',
+        passNumber: extractField(fullText, 'Pass') || extractField(fullText, 'Gate Pass') || '',
+        material: extractField(fullText, 'Material') || extractField(fullText, 'Item') || ''
+      };
+      if (extractedData.passNumber) {
+        actions.push(`Gate Pass: ${extractedData.passNumber} - ${extractedData.material}`);
+      }
+      break;
+
+    case 'attendance':
+      extractedData = {
+        type: 'attendance',
+        date: date || new Date().toISOString().split('T')[0],
+        details: subject
+      };
+      actions.push(`Attendance Report: ${subject}`);
+      break;
+  }
+
+  // Log activity for trackable records
+  if (extractedData.ourRef || extractedData.eoNo) {
+    const orderId = findOrderByRef(extractedData.ourRef || extractedData.eoNo);
+    const activity = {
+      id: 'ACT-' + Date.now().toString(36).toUpperCase(),
+      orderId: orderId || '',
+      ourRef: extractedData.ourRef || extractedData.eoNo || '',
+      type: emailType,
+      description: actions.join('; ') || subject,
+      from: from,
+      timestamp: new Date().toISOString(),
+      emailSubject: subject,
+      module: getModuleForType(emailType)
+    };
+    db.activityLog.push(activity);
+    // Keep only last 1000 activities
+    if (db.activityLog.length > 1000) {
+      db.activityLog = db.activityLog.slice(-1000);
+    }
+  }
+
+  return {
+    emailType,
+    extractedData,
+    actions,
+    processed: actions.length > 0
+  };
+}
+
+// Helper: Find order ID by Our Ref or EO number
+function findOrderByRef(ref) {
+  if (!ref) return '';
+  const order = Object.values(db.orders).find(o =>
+    o.ourRef === ref || o.poNumber === ref
+  );
+  return order ? order.id : '';
+}
+
+// Helper: Get module name for email type
+function getModuleForType(emailType) {
+  const moduleMap = {
+    'eo_alert': 'merchandising',
+    'fab_consumption': 'purchase',
+    'cost_update': 'accounts',
+    'po_approval': 'accounts',
+    'process_cost': 'store',
+    'courier_details': 'shipping',
+    'excess_receive': 'store',
+    'extra_pcs': 'accounts',
+    'cash_payment': 'accounts',
+    'bank_payment': 'accounts',
+    'packing_list': 'packing',
+    'gate_pass': 'store',
+    'attendance': 'hr'
+  };
+  return moduleMap[emailType] || 'general';
+}
+
 async function checkEmails() {
   if (!EMAIL_PASS) {
     return; // No password configured, skip silently
@@ -1896,6 +2190,19 @@ async function checkEmails() {
           // Parse order details from ERP email
           const fullBody = body + '\n' + htmlBody;
           const orderData = parseOrderFromEmail(subject, fullBody, from);
+
+          // Classify and process email with workflow engine
+          const emailDate = parsed.date ? new Date(parsed.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+          const workflowResult = classifyAndProcessEmail(subject, fullBody, fromEmail, EMAIL_USER, emailDate);
+          if (workflowResult.processed) {
+            console.log(`  🔄 Workflow: ${workflowResult.emailType} — ${workflowResult.actions.join(', ')}`);
+            io.emit('workflow-processed', {
+              emailType: workflowResult.emailType,
+              actions: workflowResult.actions,
+              extractedData: workflowResult.extractedData,
+              timestamp: new Date().toISOString()
+            });
+          }
 
           // Create order if we have buyer or style
           if (orderData.buyer || orderData.styleNo) {
@@ -2278,6 +2585,172 @@ app.get('/api/ai/delay-check', async (req, res) => {
 
 app.get('/api/ai/status', (req, res) => {
   res.json({ configured: !!CLAUDE_API_KEY, model: CLAUDE_MODEL });
+});
+
+// ── Workflow API Endpoints ───────────────────────────────
+// Activity Log
+app.post('/api/activity', (req, res) => {
+  const { orderId, ourRef, type, description, from, module, emailSubject } = req.body;
+  if (!type || !description) {
+    return res.status(400).json({ error: 'type and description required' });
+  }
+  const activity = {
+    id: 'ACT-' + Date.now().toString(36).toUpperCase(),
+    orderId: orderId || '',
+    ourRef: ourRef || '',
+    type: type,
+    description: description,
+    from: from || 'system',
+    timestamp: new Date().toISOString(),
+    emailSubject: emailSubject || '',
+    module: module || ''
+  };
+  db.activityLog.push(activity);
+  if (db.activityLog.length > 1000) {
+    db.activityLog = db.activityLog.slice(-1000);
+  }
+  saveData();
+  io.emit('activity-logged', activity);
+  res.json(activity);
+});
+
+app.get('/api/activity/:orderId', (req, res) => {
+  const { orderId } = req.params;
+  const activities = db.activityLog.filter(a => a.orderId === orderId || a.ourRef === orderId);
+  res.json(activities);
+});
+
+app.get('/api/activity', (req, res) => {
+  const recent = db.activityLog.slice(-50).reverse();
+  res.json(recent);
+});
+
+// Approvals Queue
+app.get('/api/approvals', (req, res) => {
+  const { status } = req.query;
+  let approvals = db.approvals;
+  if (status) {
+    approvals = approvals.filter(a => a.status === status);
+  }
+  // Sort by creation date, newest first
+  approvals = approvals.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json(approvals);
+});
+
+app.post('/api/approvals', (req, res) => {
+  const { type, subject, details, poNumber, ourRef, material, quantity } = req.body;
+  if (!type || !subject) {
+    return res.status(400).json({ error: 'type and subject required' });
+  }
+  const approval = {
+    id: 'APR-' + Date.now().toString(36).toUpperCase(),
+    type: type,
+    subject: subject,
+    details: details || '',
+    poNumber: poNumber || '',
+    ourRef: ourRef || '',
+    material: material || '',
+    quantity: quantity || '',
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    createdBy: 'system'
+  };
+  db.approvals.push(approval);
+  saveData();
+  io.emit('approval-created', approval);
+  res.json(approval);
+});
+
+app.put('/api/approvals/:id', (req, res) => {
+  const { id } = req.params;
+  const { status, approvedBy, notes } = req.body;
+  if (!status) {
+    return res.status(400).json({ error: 'status required' });
+  }
+  const approval = db.approvals.find(a => a.id === id);
+  if (!approval) {
+    return res.status(404).json({ error: 'Approval not found' });
+  }
+  approval.status = status;
+  approval.approvedBy = approvedBy || 'system';
+  approval.approvalNotes = notes || '';
+  approval.approvedAt = new Date().toISOString();
+  saveData();
+  io.emit('approval-updated', approval);
+  res.json(approval);
+});
+
+// Costing Records
+app.get('/api/costings', (req, res) => {
+  const costings = Object.values(db.costings);
+  // Sort by creation date, newest first
+  costings.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json(costings);
+});
+
+app.get('/api/costings/:orderId', (req, res) => {
+  const { orderId } = req.params;
+  const costing = db.costings[orderId];
+  if (!costing) {
+    return res.status(404).json({ error: 'Costing not found' });
+  }
+  res.json(costing);
+});
+
+app.post('/api/costings', (req, res) => {
+  const { orderId, ourRef, styleNo, processor, prNo, fabricQuality, orderQty, color, greigeCost, shrinkage, processRate, wastage, gst } = req.body;
+  if (!orderId || !styleNo) {
+    return res.status(400).json({ error: 'orderId and styleNo required' });
+  }
+
+  const totalProcessRate = (parseFloat(processRate) || 0) * (parseFloat(orderQty) || 0);
+  const totalCost = (parseFloat(greigeCost) || 0) + totalProcessRate + (parseFloat(wastage) || 0);
+  const gstAmount = (totalCost * (parseFloat(gst) || 0)) / 100;
+
+  const costing = {
+    id: 'CST-' + Date.now().toString(36).toUpperCase(),
+    orderId: orderId,
+    ourRef: ourRef || '',
+    styleNo: styleNo,
+    processor: processor || '',
+    prNo: prNo || '',
+    fabricQuality: fabricQuality || '',
+    orderQty: orderQty || 0,
+    color: color || '',
+    greigeCost: greigeCost || 0,
+    shrinkage: shrinkage || 0,
+    processRate: processRate || 0,
+    totalProcessRate: totalProcessRate,
+    wastage: wastage || 0,
+    totalCost: totalCost,
+    gst: gstAmount,
+    status: 'draft',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  db.costings[orderId] = costing;
+  saveData();
+  io.emit('costing-updated', costing);
+  res.json(costing);
+});
+
+app.put('/api/costings/:orderId', (req, res) => {
+  const { orderId } = req.params;
+  const { status, notes } = req.body;
+
+  const costing = db.costings[orderId];
+  if (!costing) {
+    return res.status(404).json({ error: 'Costing not found' });
+  }
+
+  if (status) costing.status = status;
+  if (notes) costing.notes = notes;
+  costing.updatedAt = new Date().toISOString();
+
+  saveData();
+  io.emit('costing-updated', costing);
+  res.json(costing);
 });
 
 server.listen(PORT, () => {
