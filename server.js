@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const fs = require('fs');
 const path = require('path');
-const Imap = require('imap');
+const Pop3Command = require('node-pop3');
 const { simpleParser } = require('mailparser');
 
 const app = express();
@@ -14,11 +14,11 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data.json');
 
-// ── Email IMAP Config ─────────────────────────────────
+// ── Email POP3 Config ─────────────────────────────────
 const EMAIL_USER = process.env.EMAIL_USER || 'internetexportsorders@rediffmail.com';
 const EMAIL_PASS = process.env.EMAIL_PASS || '';  // Email password
-const EMAIL_HOST = process.env.EMAIL_HOST || 'imap.rediffmailpro.com';
-const EMAIL_PORT = parseInt(process.env.EMAIL_PORT) || 993;
+const EMAIL_HOST = process.env.EMAIL_HOST || 'pop.rediffmail.com';
+const EMAIL_PORT = parseInt(process.env.EMAIL_PORT) || 995;
 const EMAIL_CHECK_INTERVAL = parseInt(process.env.EMAIL_CHECK_INTERVAL) || 60000; // 1 min
 
 // ── Default admin password (change on first login) ──
@@ -50,6 +50,7 @@ let db = loadData();
 
 // Ensure settings exist on old data files
 if (!db.settings) db.settings = { adminPin: DEFAULT_ADMIN_PIN, companyName: 'Style Tracker' };
+if (!db.processedEmailUIDs) db.processedEmailUIDs = [];
 if (!db.users) db.users = [{ id: 'admin', name: 'Admin', role: 'admin', dept: 'all', pin: DEFAULT_ADMIN_PIN }];
 if (!db.orders) db.orders = {};
 if (!db.deptPasswords) db.deptPasswords = {};
@@ -915,123 +916,127 @@ function parseOrderFromEmail(subject, body, from) {
   return { buyer, styleNo, poNumber, quantity, exFactoryDate, shipDate, orderDate, description, merchandiser };
 }
 
-function checkEmails() {
+async function checkEmails() {
   if (!EMAIL_PASS) {
     return; // No password configured, skip silently
   }
 
-  const imap = new Imap({
-    user: EMAIL_USER,
-    password: EMAIL_PASS,
-    host: EMAIL_HOST,
-    port: EMAIL_PORT,
-    tls: true,
-    tlsOptions: { rejectUnauthorized: false },
-    authTimeout: 10000
-  });
-
-  function openInbox(cb) {
-    imap.openBox('INBOX', false, cb);
-  }
-
-  imap.once('ready', () => {
-    openInbox((err, box) => {
-      if (err) { console.error('IMAP inbox error:', err.message); imap.end(); return; }
-
-      // Search for unseen emails
-      imap.search(['UNSEEN'], (err, results) => {
-        if (err) { console.error('IMAP search error:', err.message); imap.end(); return; }
-        if (!results || results.length === 0) { imap.end(); return; }
-
-        console.log(`📧 Found ${results.length} new email(s)`);
-
-        const fetch = imap.fetch(results, { bodies: '', markSeen: true });
-
-        fetch.on('message', (msg) => {
-          msg.on('body', (stream) => {
-            simpleParser(stream, (err, parsed) => {
-              if (err) { console.error('Parse error:', err.message); return; }
-
-              const from = parsed.from ? parsed.from.text : '';
-              const fromEmail = parsed.from && parsed.from.value && parsed.from.value[0] ? parsed.from.value[0].address.toLowerCase() : '';
-              const subject = parsed.subject || '';
-              const body = parsed.text || '';
-              const htmlBody = parsed.html || '';
-
-              console.log(`  📩 Email from: ${from} (${fromEmail}) | Subject: ${subject}`);
-
-              // Only process emails from allowed senders (ERP system)
-              if (!ALLOWED_EMAIL_SENDERS.includes(fromEmail)) {
-                console.log(`  ⏭️ Skipping — sender not in allowed list`);
-                return;
-              }
-
-              // Parse order details from ERP email
-              const fullBody = body + '\n' + htmlBody;
-              const orderData = parseOrderFromEmail(subject, fullBody, from);
-
-              // Create order if we have buyer or style
-              if (orderData.buyer || orderData.styleNo) {
-                const id = 'ORD-' + Date.now().toString(36).toUpperCase();
-                const stages = {};
-                ORDER_STAGES.forEach(s => {
-                  stages[s.id] = { status: 'pending', targetDate: '', actualDate: '', notes: '', updatedBy: '', updatedAt: '' };
-                });
-
-                // Set ex-factory date as target for the ex_factory stage
-                if (orderData.exFactoryDate) {
-                  stages['ex_factory'].targetDate = orderData.exFactoryDate;
-                }
-
-                const order = {
-                  id,
-                  buyer: orderData.buyer || 'Unknown Buyer',
-                  styleNo: orderData.styleNo || 'TBD-' + Date.now().toString(36).toUpperCase().slice(-4),
-                  description: orderData.description,
-                  quantity: orderData.quantity,
-                  exFactoryDate: orderData.exFactoryDate,
-                  merchant: orderData.merchandiser || '',
-                  poNumber: orderData.poNumber,
-                  stages,
-                  createdAt: new Date().toISOString(),
-                  history: [{ stageId: 'order_confirm', status: 'pending', notes: `Auto-created from ERP alert: EO ${orderData.poNumber}`, by: 'ERP System', at: new Date().toISOString() }],
-                  source: 'email',
-                  emailFrom: from,
-                  emailSubject: subject
-                };
-
-                db.orders[id] = order;
-                saveData();
-                io.emit('order-created', order);
-                io.emit('notify', {
-                  title: `📧 New EO: ${orderData.poNumber} — ${orderData.buyer}`,
-                  body: `Style: ${orderData.styleNo} | Qty: ${orderData.quantity} | Ex-Factory: ${orderData.exFactoryDate}`,
-                  styleNum: orderData.styleNo,
-                  status: 'other',
-                  time: new Date().toISOString(),
-                  fromUser: 'ERP System',
-                  targetDepts: ['all']
-                });
-                console.log(`  ✅ Order created: ${id} — EO ${orderData.poNumber} | ${orderData.buyer} | ${orderData.styleNo} | Qty: ${orderData.quantity}`);
-              } else {
-                console.log(`  ⚠️ Could not extract order info from ERP email, skipping`);
-              }
-            });
-          });
-        });
-
-        fetch.once('end', () => {
-          imap.end();
-        });
-      });
+  let pop3;
+  try {
+    pop3 = new Pop3Command({
+      user: EMAIL_USER,
+      password: EMAIL_PASS,
+      host: EMAIL_HOST,
+      port: EMAIL_PORT,
+      tls: true,
+      tlsOptions: { rejectUnauthorized: false },
+      timeout: 15000
     });
-  });
 
-  imap.once('error', (err) => {
-    console.error('IMAP error:', err.message);
-  });
+    await pop3.connect();
 
-  imap.connect();
+    // Get list of messages with UIDs
+    const uidList = await pop3.UIDL();
+    if (!uidList || uidList.length === 0) {
+      await pop3.QUIT();
+      return;
+    }
+
+    // Filter out already-processed emails
+    const newMessages = uidList.filter(([msgNum, uid]) => !db.processedEmailUIDs.includes(uid));
+    if (newMessages.length === 0) {
+      await pop3.QUIT();
+      return;
+    }
+
+    console.log(`📧 Found ${newMessages.length} new email(s)`);
+
+    for (const [msgNum, uid] of newMessages) {
+      try {
+        const rawEmail = await pop3.RETR(msgNum);
+        const parsed = await simpleParser(rawEmail);
+
+        const from = parsed.from ? parsed.from.text : '';
+        const fromEmail = parsed.from && parsed.from.value && parsed.from.value[0] ? parsed.from.value[0].address.toLowerCase() : '';
+        const subject = parsed.subject || '';
+        const body = parsed.text || '';
+        const htmlBody = parsed.html || '';
+
+        console.log(`  📩 Email from: ${from} (${fromEmail}) | Subject: ${subject}`);
+
+        // Mark as processed regardless of sender
+        db.processedEmailUIDs.push(uid);
+        // Keep only the last 500 UIDs to avoid unbounded growth
+        if (db.processedEmailUIDs.length > 500) {
+          db.processedEmailUIDs = db.processedEmailUIDs.slice(-500);
+        }
+
+        // Only process emails from allowed senders (ERP system)
+        if (!ALLOWED_EMAIL_SENDERS.includes(fromEmail)) {
+          console.log(`  ⏭️ Skipping — sender not in allowed list`);
+          continue;
+        }
+
+        // Parse order details from ERP email
+        const fullBody = body + '\n' + htmlBody;
+        const orderData = parseOrderFromEmail(subject, fullBody, from);
+
+        // Create order if we have buyer or style
+        if (orderData.buyer || orderData.styleNo) {
+          const id = 'ORD-' + Date.now().toString(36).toUpperCase();
+          const stages = {};
+          ORDER_STAGES.forEach(s => {
+            stages[s.id] = { status: 'pending', targetDate: '', actualDate: '', notes: '', updatedBy: '', updatedAt: '' };
+          });
+
+          // Set ex-factory date as target for the ex_factory stage
+          if (orderData.exFactoryDate) {
+            stages['ex_factory'].targetDate = orderData.exFactoryDate;
+          }
+
+          const order = {
+            id,
+            buyer: orderData.buyer || 'Unknown Buyer',
+            styleNo: orderData.styleNo || 'TBD-' + Date.now().toString(36).toUpperCase().slice(-4),
+            description: orderData.description,
+            quantity: orderData.quantity,
+            exFactoryDate: orderData.exFactoryDate,
+            merchant: orderData.merchandiser || '',
+            poNumber: orderData.poNumber,
+            stages,
+            createdAt: new Date().toISOString(),
+            history: [{ stageId: 'order_confirm', status: 'pending', notes: `Auto-created from ERP alert: EO ${orderData.poNumber}`, by: 'ERP System', at: new Date().toISOString() }],
+            source: 'email',
+            emailFrom: from,
+            emailSubject: subject
+          };
+
+          db.orders[id] = order;
+          io.emit('order-created', order);
+          io.emit('notify', {
+            title: `📧 New EO: ${orderData.poNumber} — ${orderData.buyer}`,
+            body: `Style: ${orderData.styleNo} | Qty: ${orderData.quantity} | Ex-Factory: ${orderData.exFactoryDate}`,
+            styleNum: orderData.styleNo,
+            status: 'other',
+            time: new Date().toISOString(),
+            fromUser: 'ERP System',
+            targetDepts: ['all']
+          });
+          console.log(`  ✅ Order created: ${id} — EO ${orderData.poNumber} | ${orderData.buyer} | ${orderData.styleNo} | Qty: ${orderData.quantity}`);
+        } else {
+          console.log(`  ⚠️ Could not extract order info from ERP email, skipping`);
+        }
+      } catch (msgErr) {
+        console.error(`  POP3 message error (msg ${msgNum}):`, msgErr.message);
+      }
+    }
+
+    saveData();
+    await pop3.QUIT();
+  } catch (err) {
+    console.error('POP3 error:', err.message);
+    try { if (pop3) await pop3.QUIT(); } catch (e) { /* ignore quit error */ }
+  }
 }
 
 // ── Email Check API (manual trigger) ──────────────────
