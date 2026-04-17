@@ -1090,6 +1090,38 @@ body{
 .prod-step.issue .prod-step-status{color:#dc2626;font-weight:600}
 
 /* ═══════════════════════════════════════════
+   PRODUCTION PLANNING
+   ═══════════════════════════════════════════ */
+.production-container{flex:1;overflow-y:auto;padding:20px}
+.unit-card{background:var(--surface);border-radius:12px;padding:18px;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:16px;border-left:4px solid var(--primary)}
+.unit-header{display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+.unit-header h4{font-size:16px;font-weight:700;color:var(--primary);margin:0}
+.unit-header .unit-actions{display:flex;gap:8px}
+.unit-header .unit-actions button{background:none;border:none;cursor:pointer;font-size:14px;padding:4px 8px;border-radius:6px}
+.unit-header .unit-actions button:hover{background:#f3f4f6}
+.unit-body{margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+.unit-card.collapsed .unit-body{display:none}
+.unit-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.unit-stat{background:var(--bg);border-radius:8px;padding:12px;text-align:center}
+.unit-stat .us-label{font-size:10px;color:var(--text-secondary);font-weight:600;text-transform:uppercase}
+.unit-stat .us-value{font-size:22px;font-weight:800;color:var(--primary);margin-top:2px}
+.prod-section{margin-bottom:14px}
+.prod-section h5{font-size:13px;font-weight:600;color:var(--text);margin:0 0 10px;text-transform:uppercase;letter-spacing:.3px;display:flex;align-items:center;gap:6px}
+.prod-item{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg);border-radius:8px;margin-bottom:6px;font-size:12px}
+.prod-item-info .pi-name{font-weight:600;color:var(--text);font-size:13px}
+.prod-item-info .pi-detail{color:var(--text-secondary);font-size:11px;margin-top:2px}
+.prod-item-actions{display:flex;gap:6px}
+.prod-item-actions button{background:none;border:none;cursor:pointer;font-size:13px;padding:4px;border-radius:4px}
+.prod-item-actions button:hover{background:#e5e7eb}
+.add-item-btn{width:100%;padding:8px;background:var(--bg);border:2px dashed var(--border);border-radius:8px;cursor:pointer;color:var(--primary);font-weight:600;font-size:12px;margin-top:6px}
+.add-item-btn:hover{background:#f0fdf4;border-color:var(--primary)}
+.prod-global-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.pgs-card{background:var(--surface);border-radius:10px;padding:16px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.pgs-card .pgs-icon{font-size:24px;margin-bottom:4px}
+.pgs-card .pgs-val{font-size:26px;font-weight:800;color:var(--primary)}
+.pgs-card .pgs-lbl{font-size:11px;color:var(--text-secondary);font-weight:600;text-transform:uppercase}
+
+/* ═══════════════════════════════════════════
    ORDERS VIEW - THE STAR FEATURE
    ═══════════════════════════════════════════ */
 #ordersView{
@@ -2173,6 +2205,7 @@ body{
       <button class="tab-btn" data-v="insights" onclick="sw('insights')">Insights</button>
       <button class="tab-btn" data-v="approvals" onclick="sw('approvals')" id="approvalsTab" style="display:none">Approvals<span class="badge" id="bdgA"></span></button>
       <button class="tab-btn" data-v="notif" onclick="toggleNP()">Alerts<span class="badge" id="bdgN"></span></button>
+      <button class="tab-btn" data-v="production" onclick="sw('production')" id="productionTab" style="display:none">Production</button>
       <button class="tab-btn" data-v="admin" onclick="sw('admin')" id="adminTab" style="display:none">Admin</button>
     </div>
     <div class="right">
@@ -2436,6 +2469,54 @@ body{
     </div>
   </div>
 
+  <!-- PRODUCTION PLANNING VIEW -->
+  <div id="productionView" class="view">
+    <div class="production-container">
+      <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <h3 style="font-size:18px;font-weight:700;color:var(--primary);margin:0">Production Units</h3>
+        <button class="btn-primary" onclick="openAddUnitModal()" style="padding:10px 16px">+ Add Unit</button>
+      </div>
+      <div id="prodGlobalStats" style="margin-bottom:16px"></div>
+      <div id="unitsContainer"></div>
+    </div>
+  </div>
+
+  <!-- UNIT MODAL -->
+  <div class="modal-overlay" id="unitModal">
+    <div class="modal" style="width:440px">
+      <h3 id="unitModalTitle">Add Production Unit</h3>
+      <div style="margin-bottom:12px"><label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Unit Name</label><input type="text" id="unitNameInp" placeholder="e.g. Unit 1" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;margin-top:4px" /></div>
+      <div style="margin-bottom:12px"><label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Total Sewing Operators</label><input type="number" id="unitOpsInp" placeholder="e.g. 150" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;margin-top:4px" /></div>
+      <div style="margin-bottom:12px"><label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Number of Sewing Lines</label><input type="number" id="unitLinesInp" placeholder="e.g. 6" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;margin-top:4px" /></div>
+      <div style="margin-bottom:16px"><label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Total Cutting Tables</label><input type="number" id="unitTablesInp" placeholder="e.g. 8" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;margin-top:4px" /></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end"><button onclick="closeUnitModal()" style="padding:10px 20px;border:1px solid var(--border);border-radius:8px;background:white;cursor:pointer">Cancel</button><button onclick="saveUnit()" style="padding:10px 20px;border:none;border-radius:8px;background:var(--primary);color:white;font-weight:600;cursor:pointer">Save</button></div>
+      <input type="hidden" id="unitCurrentId" />
+    </div>
+  </div>
+
+  <!-- LINE MODAL -->
+  <div class="modal-overlay" id="lineModal">
+    <div class="modal" style="width:400px">
+      <h3 id="lineModalTitle">Add Sewing Line</h3>
+      <div style="margin-bottom:12px"><label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Line Name</label><input type="text" id="lineNameInp" placeholder="e.g. Line 1" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;margin-top:4px" /></div>
+      <div style="margin-bottom:12px"><label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Operators on This Line</label><input type="number" id="lineOpsInp" placeholder="e.g. 25" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;margin-top:4px" /></div>
+      <div style="margin-bottom:16px"><label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Daily Output (pieces)</label><input type="number" id="lineOutputInp" placeholder="e.g. 500" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;margin-top:4px" /></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end"><button onclick="closeLineModal()" style="padding:10px 20px;border:1px solid var(--border);border-radius:8px;background:white;cursor:pointer">Cancel</button><button onclick="saveLine()" style="padding:10px 20px;border:none;border-radius:8px;background:var(--primary);color:white;font-weight:600;cursor:pointer">Save</button></div>
+      <input type="hidden" id="lineUnitId" /><input type="hidden" id="lineCurrentId" />
+    </div>
+  </div>
+
+  <!-- CUTTING TABLE MODAL -->
+  <div class="modal-overlay" id="ctModal">
+    <div class="modal" style="width:400px">
+      <h3 id="ctModalTitle">Add Cutting Table</h3>
+      <div style="margin-bottom:12px"><label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Table Name</label><input type="text" id="ctNameInp" placeholder="e.g. Table 1" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;margin-top:4px" /></div>
+      <div style="margin-bottom:16px"><label style="font-size:12px;font-weight:600;color:var(--text-secondary)">Daily Capacity (pieces)</label><input type="number" id="ctCapInp" placeholder="e.g. 300" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;margin-top:4px" /></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end"><button onclick="closeCTModal()" style="padding:10px 20px;border:1px solid var(--border);border-radius:8px;background:white;cursor:pointer">Cancel</button><button onclick="saveCT()" style="padding:10px 20px;border:none;border-radius:8px;background:var(--primary);color:white;font-weight:600;cursor:pointer">Save</button></div>
+      <input type="hidden" id="ctUnitId" /><input type="hidden" id="ctCurrentId" />
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -2444,7 +2525,7 @@ body{
 // ═══════════════════════════════════════════
 let me=null,socket=null;
 let allU=[],onlU=[],msgs=[],notifs=[],STY={},ORDERS={};
-let unreadC=0,fVal='all',adminPin=null,pendingChanges=[];
+let unreadC=0,fVal='all',adminPin=null,pendingChanges=[],prodUnits=[];
 
 const DC={
   merchandising:'#0d9488',
@@ -2573,7 +2654,9 @@ function loginAs(uid){
   if(me.role==='admin'){
     document.getElementById('adminTab').style.display='';
     document.getElementById('approvalsTab').style.display='';
+    document.getElementById('productionTab').style.display='';
     loadPendingChanges();
+    loadProdUnits();
   }
   if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();
   initAI();
@@ -2608,6 +2691,7 @@ function loginAs(uid){
   socket.on('order-deleted',id=>{delete ORDERS[id];renderOrders();updB('bdgO',Object.keys(ORDERS).length);});
   socket.on('pending-change',pc=>{if(me.role==='admin'){pendingChanges.push(pc);renderApprovals();updB('bdgA',pendingChanges.length);}});
   socket.on('pending-resolved',d=>{pendingChanges=pendingChanges.filter(p=>p.id!==d.id);renderApprovals();updB('bdgA',pendingChanges.length);});
+  socket.on('production-units-updated',u=>{prodUnits=u;renderProdUnits();});
 
   fetch('/api/data').then(r=>r.json()).then(d=>{STY=d.styles||{};renderDash();renderSty();});
   fetch('/api/orders').then(r=>r.json()).then(d=>{ORDERS=d.orderId?{[d.id]:d}:d||{};renderOrders();updB('bdgO',Object.keys(ORDERS).length);});
@@ -2620,6 +2704,7 @@ function logout(){
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('adminTab').style.display='none';
   document.getElementById('approvalsTab').style.display='none';
+  document.getElementById('productionTab').style.display='none';
   document.getElementById('aiFab').style.display='none';
   document.getElementById('aiPanel').classList.remove('open');
   document.getElementById('cmsgs').innerHTML='<div class="msg msg-system">Type a style number and update to get started</div>';
@@ -3042,6 +3127,7 @@ function sw(v){
   if(v==='admin'){renderTeam();loadDeptPasswords();}
   if(v==='orders')renderOrders();
   if(v==='approvals')loadPendingChanges();
+  if(v==='production')loadProdUnits();
 }
 
 // ═══════════════════════════════════════════
@@ -3372,6 +3458,112 @@ function cap(s){return s?s[0].toUpperCase()+s.slice(1):'';}
 function ini(n){return(n||'').split(/[\s-]+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();}
 function fmtTime(d){return new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});}
 function shortTime(d){return new Date(d).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:true});}
+
+// ═══════════════════════════════════════════
+// PRODUCTION PLANNING
+// ═══════════════════════════════════════════
+async function loadProdUnits(){
+  try{prodUnits=await(await fetch('/api/production-units')).json();renderProdUnits();}catch(e){console.error('Load units:',e);}
+}
+
+function renderProdUnits(){
+  const c=document.getElementById('unitsContainer');
+  const gs=document.getElementById('prodGlobalStats');
+  // Global totals
+  let tOps=0,tLines=0,tTables=0,tSewCap=0,tCutCap=0;
+  prodUnits.forEach(u=>{
+    tOps+=u.totalSewingOperators||0;
+    tLines+=(u.sewingLines||[]).length;
+    tTables+=(u.cuttingTables||[]).length;
+    (u.sewingLines||[]).forEach(l=>tSewCap+=(l.dailyOutput||0));
+    (u.cuttingTables||[]).forEach(t=>tCutCap+=(t.dailyCapacity||0));
+  });
+  gs.innerHTML=prodUnits.length?`<div class="prod-global-stats">
+    <div class="pgs-card"><div class="pgs-icon">🏭</div><div class="pgs-val">${prodUnits.length}</div><div class="pgs-lbl">Units</div></div>
+    <div class="pgs-card"><div class="pgs-icon">👥</div><div class="pgs-val">${tOps}</div><div class="pgs-lbl">Total Operators</div></div>
+    <div class="pgs-card"><div class="pgs-icon">🧵</div><div class="pgs-val">${tLines}</div><div class="pgs-lbl">Sewing Lines</div></div>
+    <div class="pgs-card"><div class="pgs-icon">✂️</div><div class="pgs-val">${tTables}</div><div class="pgs-lbl">Cutting Tables</div></div>
+    <div class="pgs-card"><div class="pgs-icon">📊</div><div class="pgs-val">${tSewCap.toLocaleString()}</div><div class="pgs-lbl">Daily Sewing Cap.</div></div>
+    <div class="pgs-card"><div class="pgs-icon">📐</div><div class="pgs-val">${tCutCap.toLocaleString()}</div><div class="pgs-lbl">Daily Cutting Cap.</div></div>
+  </div>`:'';
+
+  if(!prodUnits.length){c.innerHTML='<div style="text-align:center;padding:40px;color:var(--text-secondary);font-size:13px">No production units yet. Click "+ Add Unit" to get started.</div>';return;}
+
+  c.innerHTML=prodUnits.map(u=>{
+    const sewCap=(u.sewingLines||[]).reduce((a,l)=>a+(l.dailyOutput||0),0);
+    const cutCap=(u.cuttingTables||[]).reduce((a,t)=>a+(t.dailyCapacity||0),0);
+    return `<div class="unit-card" id="uc_${u.id}">
+      <div class="unit-header" onclick="document.getElementById('uc_${u.id}').classList.toggle('collapsed')">
+        <h4>🏭 ${esc(u.name)}</h4>
+        <div class="unit-actions">
+          <button onclick="event.stopPropagation();editUnit('${u.id}')" title="Edit">✏️</button>
+          <button onclick="event.stopPropagation();deleteUnit('${u.id}')" title="Delete">🗑️</button>
+        </div>
+      </div>
+      <div class="unit-body">
+        <div class="unit-summary">
+          <div class="unit-stat"><div class="us-label">Operators</div><div class="us-value">${u.totalSewingOperators||0}</div></div>
+          <div class="unit-stat"><div class="us-label">Sewing Lines</div><div class="us-value">${(u.sewingLines||[]).length}</div></div>
+          <div class="unit-stat"><div class="us-label">Cutting Tables</div><div class="us-value">${(u.cuttingTables||[]).length}</div></div>
+          <div class="unit-stat"><div class="us-label">Sewing Cap/Day</div><div class="us-value">${sewCap.toLocaleString()}</div></div>
+          <div class="unit-stat"><div class="us-label">Cutting Cap/Day</div><div class="us-value">${cutCap.toLocaleString()}</div></div>
+        </div>
+        <div class="prod-section">
+          <h5>🧵 Sewing Lines (${(u.sewingLines||[]).length})</h5>
+          ${(u.sewingLines||[]).map(l=>`<div class="prod-item">
+            <div class="prod-item-info"><div class="pi-name">${esc(l.name)}</div><div class="pi-detail">${l.operators} operators · ${l.dailyOutput} pcs/day</div></div>
+            <div class="prod-item-actions"><button onclick="editLine('${u.id}','${l.id}')" title="Edit">✏️</button><button onclick="deleteLine('${u.id}','${l.id}')" title="Delete">🗑️</button></div>
+          </div>`).join('')}
+          <button class="add-item-btn" onclick="openAddLine('${u.id}')">+ Add Sewing Line</button>
+        </div>
+        <div class="prod-section">
+          <h5>✂️ Cutting Tables (${(u.cuttingTables||[]).length})</h5>
+          ${(u.cuttingTables||[]).map(t=>`<div class="prod-item">
+            <div class="prod-item-info"><div class="pi-name">${esc(t.name)}</div><div class="pi-detail">${t.dailyCapacity} pcs/day capacity</div></div>
+            <div class="prod-item-actions"><button onclick="editCT('${u.id}','${t.id}')" title="Edit">✏️</button><button onclick="deleteCT('${u.id}','${t.id}')" title="Delete">🗑️</button></div>
+          </div>`).join('')}
+          <button class="add-item-btn" onclick="openAddCT('${u.id}')">+ Add Cutting Table</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Unit CRUD
+function openAddUnitModal(){document.getElementById('unitCurrentId').value='';document.getElementById('unitModalTitle').textContent='Add Production Unit';document.getElementById('unitNameInp').value='';document.getElementById('unitOpsInp').value='';document.getElementById('unitLinesInp').value='';document.getElementById('unitTablesInp').value='';document.getElementById('unitModal').classList.add('open');}
+function editUnit(id){const u=prodUnits.find(x=>x.id===id);if(!u)return;document.getElementById('unitCurrentId').value=id;document.getElementById('unitModalTitle').textContent='Edit Unit';document.getElementById('unitNameInp').value=u.name;document.getElementById('unitOpsInp').value=u.totalSewingOperators||'';document.getElementById('unitLinesInp').value=u.numSewingLines||'';document.getElementById('unitTablesInp').value=u.totalCuttingTables||'';document.getElementById('unitModal').classList.add('open');}
+function closeUnitModal(){document.getElementById('unitModal').classList.remove('open');}
+async function saveUnit(){
+  const id=document.getElementById('unitCurrentId').value;
+  const body={name:document.getElementById('unitNameInp').value.trim(),totalSewingOperators:parseInt(document.getElementById('unitOpsInp').value)||0,numSewingLines:parseInt(document.getElementById('unitLinesInp').value)||0,totalCuttingTables:parseInt(document.getElementById('unitTablesInp').value)||0,adminPin};
+  if(!body.name){alert('Unit name required');return;}
+  try{const r=await(await fetch(id?'/api/production-units/'+id:'/api/production-units',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();if(r.ok||r.unit){await loadProdUnits();closeUnitModal();}else alert(r.error||'Error');}catch(e){alert('Error: '+e.message);}
+}
+async function deleteUnit(id){if(!confirm('Delete this unit and all its lines/tables?'))return;try{await fetch('/api/production-units/'+id,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPin})});await loadProdUnits();}catch(e){alert('Error: '+e.message);}}
+
+// Sewing Line CRUD
+function openAddLine(uid){document.getElementById('lineUnitId').value=uid;document.getElementById('lineCurrentId').value='';document.getElementById('lineModalTitle').textContent='Add Sewing Line';document.getElementById('lineNameInp').value='';document.getElementById('lineOpsInp').value='';document.getElementById('lineOutputInp').value='';document.getElementById('lineModal').classList.add('open');}
+function editLine(uid,lid){const u=prodUnits.find(x=>x.id===uid);if(!u)return;const l=(u.sewingLines||[]).find(x=>x.id===lid);if(!l)return;document.getElementById('lineUnitId').value=uid;document.getElementById('lineCurrentId').value=lid;document.getElementById('lineModalTitle').textContent='Edit Line';document.getElementById('lineNameInp').value=l.name;document.getElementById('lineOpsInp').value=l.operators||'';document.getElementById('lineOutputInp').value=l.dailyOutput||'';document.getElementById('lineModal').classList.add('open');}
+function closeLineModal(){document.getElementById('lineModal').classList.remove('open');}
+async function saveLine(){
+  const uid=document.getElementById('lineUnitId').value,lid=document.getElementById('lineCurrentId').value;
+  const body={name:document.getElementById('lineNameInp').value.trim(),operators:parseInt(document.getElementById('lineOpsInp').value)||0,dailyOutput:parseInt(document.getElementById('lineOutputInp').value)||0,adminPin};
+  if(!body.name){alert('Line name required');return;}
+  try{const url=lid?`/api/production-units/${uid}/sewing-lines/${lid}`:`/api/production-units/${uid}/sewing-lines`;const r=await(await fetch(url,{method:lid?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();if(r.ok||r.line){await loadProdUnits();closeLineModal();}else alert(r.error||'Error');}catch(e){alert('Error: '+e.message);}
+}
+async function deleteLine(uid,lid){if(!confirm('Delete this sewing line?'))return;try{await fetch(`/api/production-units/${uid}/sewing-lines/${lid}`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPin})});await loadProdUnits();}catch(e){alert('Error: '+e.message);}}
+
+// Cutting Table CRUD
+function openAddCT(uid){document.getElementById('ctUnitId').value=uid;document.getElementById('ctCurrentId').value='';document.getElementById('ctModalTitle').textContent='Add Cutting Table';document.getElementById('ctNameInp').value='';document.getElementById('ctCapInp').value='';document.getElementById('ctModal').classList.add('open');}
+function editCT(uid,tid){const u=prodUnits.find(x=>x.id===uid);if(!u)return;const t=(u.cuttingTables||[]).find(x=>x.id===tid);if(!t)return;document.getElementById('ctUnitId').value=uid;document.getElementById('ctCurrentId').value=tid;document.getElementById('ctModalTitle').textContent='Edit Table';document.getElementById('ctNameInp').value=t.name;document.getElementById('ctCapInp').value=t.dailyCapacity||'';document.getElementById('ctModal').classList.add('open');}
+function closeCTModal(){document.getElementById('ctModal').classList.remove('open');}
+async function saveCT(){
+  const uid=document.getElementById('ctUnitId').value,tid=document.getElementById('ctCurrentId').value;
+  const body={name:document.getElementById('ctNameInp').value.trim(),dailyCapacity:parseInt(document.getElementById('ctCapInp').value)||0,adminPin};
+  if(!body.name){alert('Table name required');return;}
+  try{const url=tid?`/api/production-units/${uid}/cutting-tables/${tid}`:`/api/production-units/${uid}/cutting-tables`;const r=await(await fetch(url,{method:tid?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();if(r.ok||r.table){await loadProdUnits();closeCTModal();}else alert(r.error||'Error');}catch(e){alert('Error: '+e.message);}
+}
+async function deleteCT(uid,tid){if(!confirm('Delete this cutting table?'))return;try{await fetch(`/api/production-units/${uid}/cutting-tables/${tid}`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPin})});await loadProdUnits();}catch(e){alert('Error: '+e.message);}}
 
 // ═══════════════════════════════════════════
 // AI ASSISTANT

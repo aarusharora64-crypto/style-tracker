@@ -52,6 +52,7 @@ if (!db.users) db.users = [{ id: 'admin', name: 'Admin', role: 'admin', dept: 'a
 if (!db.orders) db.orders = {};
 if (!db.deptPasswords) db.deptPasswords = {};
 if (!db.pendingChanges) db.pendingChanges = [];
+if (!db.productionUnits) db.productionUnits = [];
 
 // Default department passwords (admin can change these)
 const DEFAULT_DEPT_PASSWORDS = {
@@ -621,6 +622,135 @@ app.post('/api/admin/clear-messages', (req, res) => {
   db.styles = {};
   saveData();
   io.emit('data-cleared');
+  res.json({ ok: true });
+});
+
+// ── Production Units APIs ─────────────────────────────
+app.get('/api/production-units', (req, res) => {
+  res.json(db.productionUnits || []);
+});
+
+app.post('/api/production-units', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Unit name required' });
+  const unit = {
+    id: 'unit_' + Date.now().toString(36), name,
+    sewingLines: [], totalSewingOperators: 0, numSewingLines: 0,
+    cuttingTables: [], totalCuttingTables: 0,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+  };
+  db.productionUnits.push(unit);
+  saveData();
+  io.emit('production-units-updated', db.productionUnits);
+  res.json({ ok: true, unit });
+});
+
+app.put('/api/production-units/:id', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const unit = (db.productionUnits || []).find(u => u.id === req.params.id);
+  if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  if (req.body.name) unit.name = req.body.name;
+  if (req.body.totalSewingOperators !== undefined) unit.totalSewingOperators = parseInt(req.body.totalSewingOperators);
+  if (req.body.numSewingLines !== undefined) unit.numSewingLines = parseInt(req.body.numSewingLines);
+  if (req.body.totalCuttingTables !== undefined) unit.totalCuttingTables = parseInt(req.body.totalCuttingTables);
+  unit.updatedAt = new Date().toISOString();
+  saveData();
+  io.emit('production-units-updated', db.productionUnits);
+  res.json({ ok: true, unit });
+});
+
+app.delete('/api/production-units/:id', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  db.productionUnits = (db.productionUnits || []).filter(u => u.id !== req.params.id);
+  saveData();
+  io.emit('production-units-updated', db.productionUnits);
+  res.json({ ok: true });
+});
+
+app.post('/api/production-units/:id/sewing-lines', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const unit = (db.productionUnits || []).find(u => u.id === req.params.id);
+  if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  const line = {
+    id: 'line_' + Date.now().toString(36),
+    name: req.body.name || 'New Line',
+    operators: parseInt(req.body.operators) || 0,
+    dailyOutput: parseInt(req.body.dailyOutput) || 0
+  };
+  if (!unit.sewingLines) unit.sewingLines = [];
+  unit.sewingLines.push(line);
+  unit.updatedAt = new Date().toISOString();
+  saveData();
+  io.emit('production-units-updated', db.productionUnits);
+  res.json({ ok: true, line });
+});
+
+app.put('/api/production-units/:uid/sewing-lines/:lid', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const unit = (db.productionUnits || []).find(u => u.id === req.params.uid);
+  if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  const line = (unit.sewingLines || []).find(l => l.id === req.params.lid);
+  if (!line) return res.status(404).json({ error: 'Line not found' });
+  if (req.body.name) line.name = req.body.name;
+  if (req.body.operators !== undefined) line.operators = parseInt(req.body.operators);
+  if (req.body.dailyOutput !== undefined) line.dailyOutput = parseInt(req.body.dailyOutput);
+  unit.updatedAt = new Date().toISOString();
+  saveData();
+  io.emit('production-units-updated', db.productionUnits);
+  res.json({ ok: true, line });
+});
+
+app.delete('/api/production-units/:uid/sewing-lines/:lid', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const unit = (db.productionUnits || []).find(u => u.id === req.params.uid);
+  if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  unit.sewingLines = (unit.sewingLines || []).filter(l => l.id !== req.params.lid);
+  unit.updatedAt = new Date().toISOString();
+  saveData();
+  io.emit('production-units-updated', db.productionUnits);
+  res.json({ ok: true });
+});
+
+app.post('/api/production-units/:id/cutting-tables', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const unit = (db.productionUnits || []).find(u => u.id === req.params.id);
+  if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  const table = {
+    id: 'ct_' + Date.now().toString(36),
+    name: req.body.name || 'New Table',
+    dailyCapacity: parseInt(req.body.dailyCapacity) || 0
+  };
+  if (!unit.cuttingTables) unit.cuttingTables = [];
+  unit.cuttingTables.push(table);
+  unit.updatedAt = new Date().toISOString();
+  saveData();
+  io.emit('production-units-updated', db.productionUnits);
+  res.json({ ok: true, table });
+});
+
+app.put('/api/production-units/:uid/cutting-tables/:tid', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const unit = (db.productionUnits || []).find(u => u.id === req.params.uid);
+  if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  const table = (unit.cuttingTables || []).find(t => t.id === req.params.tid);
+  if (!table) return res.status(404).json({ error: 'Table not found' });
+  if (req.body.name) table.name = req.body.name;
+  if (req.body.dailyCapacity !== undefined) table.dailyCapacity = parseInt(req.body.dailyCapacity);
+  unit.updatedAt = new Date().toISOString();
+  saveData();
+  io.emit('production-units-updated', db.productionUnits);
+  res.json({ ok: true, table });
+});
+
+app.delete('/api/production-units/:uid/cutting-tables/:tid', (req, res) => {
+  if (!isAdmin(req.body.adminPin)) return res.status(403).json({ error: 'Invalid admin PIN' });
+  const unit = (db.productionUnits || []).find(u => u.id === req.params.uid);
+  if (!unit) return res.status(404).json({ error: 'Unit not found' });
+  unit.cuttingTables = (unit.cuttingTables || []).filter(t => t.id !== req.params.tid);
+  unit.updatedAt = new Date().toISOString();
+  saveData();
+  io.emit('production-units-updated', db.productionUnits);
   res.json({ ok: true });
 });
 
