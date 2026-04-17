@@ -240,6 +240,24 @@ app.put('/api/orders/:id/stage', (req, res) => {
   const { stageId, status, targetDate, actualDate, notes, userName, userRole } = req.body;
   if (!stageId || !order.stages[stageId]) return res.status(400).json({ error: 'Invalid stage' });
 
+  // ── Sequential Stage Enforcement ──
+  // Cannot mark a stage as 'active' or 'done' unless the previous stage is 'done'
+  // (Setting target dates, notes, delayed, or issue status is always allowed)
+  if (status === 'active' || status === 'done') {
+    const stageIdx = ORDER_STAGES.findIndex(s => s.id === stageId);
+    if (stageIdx > 0) {
+      const prevStage = ORDER_STAGES[stageIdx - 1];
+      const prevStatus = order.stages[prevStage.id] ? order.stages[prevStage.id].status : 'pending';
+      if (prevStatus !== 'done') {
+        return res.status(400).json({
+          error: `Cannot update "${ORDER_STAGES[stageIdx].label}" — previous stage "${prevStage.label}" must be completed first.`,
+          sequenceError: true,
+          blockedBy: prevStage.label
+        });
+      }
+    }
+  }
+
   // If user is admin, apply immediately
   if (userRole === 'admin') {
     applyStageChange(req.params.id, stageId, status, targetDate, actualDate, notes, userName);

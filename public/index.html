@@ -997,6 +997,95 @@ body{
   color:var(--text-secondary);
   font-size:13px;
 }
+/* Style card meta (buyer, PO, ex-factory) */
+.style-card-meta{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+  font-size:12px;
+  color:var(--text-secondary);
+  margin-bottom:8px;
+}
+/* Production progress bar */
+.prod-progress{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:6px;
+}
+.prod-progress-bar{
+  flex:1;
+  height:8px;
+  background:#e5e7eb;
+  border-radius:4px;
+  overflow:hidden;
+}
+.prod-progress-fill{
+  height:100%;
+  background:linear-gradient(90deg,var(--primary),#059669);
+  border-radius:4px;
+  transition:width 0.4s ease;
+}
+.prod-progress-text{
+  font-size:11px;
+  color:var(--text-secondary);
+  white-space:nowrap;
+}
+/* Production pipeline (expandable) */
+.prod-pipeline{
+  display:none;
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid var(--border);
+  gap:4px;
+}
+.style-card.expanded .prod-pipeline{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(100px,1fr));
+  gap:6px;
+}
+.prod-step{
+  text-align:center;
+  padding:8px 4px;
+  border-radius:8px;
+  background:#f3f4f6;
+  border:2px solid #e5e7eb;
+  transition:all 0.2s;
+}
+.prod-step.done{
+  background:#ecfdf5;
+  border-color:#059669;
+}
+.prod-step.active{
+  background:#eff6ff;
+  border-color:#2563eb;
+}
+.prod-step.delayed{
+  background:#fff7ed;
+  border-color:#ea580c;
+}
+.prod-step.issue{
+  background:#fef2f2;
+  border-color:#dc2626;
+}
+.prod-step-icon{
+  font-size:20px;
+  margin-bottom:2px;
+}
+.prod-step-label{
+  font-size:10px;
+  font-weight:600;
+  color:var(--text);
+}
+.prod-step-status{
+  font-size:9px;
+  color:var(--text-secondary);
+  margin-top:2px;
+}
+.prod-step.done .prod-step-status{color:#059669;font-weight:600}
+.prod-step.active .prod-step-status{color:#2563eb;font-weight:600}
+.prod-step.delayed .prod-step-status{color:#ea580c;font-weight:600}
+.prod-step.issue .prod-step-status{color:#dc2626;font-weight:600}
 
 /* ═══════════════════════════════════════════
    ORDERS VIEW - THE STAR FEATURE
@@ -2179,19 +2268,19 @@ body{
   <div id="stylesView" class="view">
     <div class="styles-container">
       <div class="styles-toolbar">
-        <input type="text" id="stySrch" placeholder="Search styles..." onkeyup="renderSty()" />
+        <input type="text" id="stySrch" placeholder="Search by style, buyer, PO..." onkeyup="renderSty()" />
         <select id="styFilt" onchange="renderSty()">
-          <option value="all">All Status</option>
+          <option value="all">All Production</option>
           <option value="cutting">Cutting</option>
           <option value="stitching">Stitching</option>
-          <option value="finishing">Finishing</option>
+          <option value="finishing">Finishing & QC</option>
           <option value="packing">Packing</option>
-          <option value="shipped">Shipped</option>
+          <option value="dispatched">Dispatched</option>
           <option value="issue">Issues</option>
         </select>
       </div>
       <div class="styles-header">
-        <span class="styles-title" id="styCount">0 Styles</span>
+        <span class="styles-title" id="styCount">0 Styles in Production</span>
         <button class="export-btn" onclick="exportCSV()">📥 Export CSV</button>
       </div>
       <div class="styles-grid" id="styCards"></div>
@@ -2512,7 +2601,7 @@ function loginAs(uid){
   socket.on('users-updated',u=>{allU=u;if(document.getElementById('adminView').classList.contains('active'))renderTeam();});
   socket.on('data-cleared',()=>{msgs=[];STY={};renderChat();renderDash();renderSty();});
   socket.on('order-created',o=>{ORDERS[o.id]=o;renderOrders();updB('bdgO',Object.keys(ORDERS).length);});
-  socket.on('order-updated',d=>{if(ORDERS[d.orderId]){ORDERS[d.orderId].stages[d.stageId]=d.stage;ORDERS[d.orderId].history=d.history;renderOrders();}});
+  socket.on('order-updated',d=>{if(ORDERS[d.orderId]){ORDERS[d.orderId].stages[d.stageId]=d.stage;ORDERS[d.orderId].history=d.history;renderOrders();renderSty();}});
   socket.on('order-info-updated',o=>{ORDERS[o.id]=o;renderOrders();});
   socket.on('order-deleted',id=>{delete ORDERS[id];renderOrders();updB('bdgO',Object.keys(ORDERS).length);});
   socket.on('pending-change',pc=>{if(me.role==='admin'){pendingChanges.push(pc);renderApprovals();updB('bdgA',pendingChanges.length);}});
@@ -2656,38 +2745,113 @@ function renderDash(){
 // ═══════════════════════════════════════════
 // STYLES
 // ═══════════════════════════════════════════
-function renderSty(hl){
-  const s=(document.getElementById('stySrch').value||'').toUpperCase().trim();
+// Production stages shown in Styles tab (after prod file handover)
+const PROD_STAGES=[
+  {id:'cutting',label:'Cutting',icon:'✂️'},
+  {id:'stitching',label:'Stitching',icon:'🧵'},
+  {id:'finishing_qc',label:'Finishing & QC',icon:'✨'},
+  {id:'pp_approve',label:'PP Approval',icon:'🏷️'},
+  {id:'final_inspection',label:'Final Inspection',icon:'🔍'},
+  {id:'packing',label:'Packing',icon:'📦'},
+  {id:'ex_factory',label:'Ex-Factory',icon:'🚚'}
+];
+
+function getProductionStatus(order){
+  // Determine current production phase for filtering
+  const stages=order.stages||{};
+  if(stages.ex_factory&&stages.ex_factory.status==='done') return 'dispatched';
+  for(const s of PROD_STAGES){
+    if(stages[s.id]&&(stages[s.id].status==='issue'||stages[s.id].status==='delayed')) return 'issue';
+  }
+  if(stages.packing&&stages.packing.status==='done') return 'packing';
+  if(stages.finishing_qc&&(stages.finishing_qc.status==='done'||stages.finishing_qc.status==='active')) return 'finishing';
+  if(stages.stitching&&(stages.stitching.status==='done'||stages.stitching.status==='active')) return 'stitching';
+  return 'cutting';
+}
+
+function getProdProgress(order){
+  let done=0;
+  PROD_STAGES.forEach(s=>{if(order.stages[s.id]&&order.stages[s.id].status==='done')done++;});
+  return {done,total:PROD_STAGES.length,pct:Math.round(done/PROD_STAGES.length*100)};
+}
+
+function renderSty(){
+  const q=(document.getElementById('stySrch').value||'').toLowerCase().trim();
   const f=document.getElementById('styFilt').value;
   const c=document.getElementById('styCards');
-  const entries=Object.entries(STY).filter(([id,d])=>{
-    if(s&&!id.includes(s))return false;
-    if(f!=='all'&&d.status!==f)return false;
+
+  // Filter orders where prod_file stage is done (production file handed out)
+  let entries=Object.values(ORDERS).filter(o=>{
+    const pf=o.stages&&o.stages.prod_file;
+    if(!pf||pf.status!=='done') return false;
+    if(q){
+      const hay=(o.buyer+' '+o.styleNo+' '+o.poNumber+' '+o.id+' '+(o.merchant||'')+' '+(o.description||'')).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    if(f!=='all'){
+      const ps=getProductionStatus(o);
+      if(f!==ps) return false;
+    }
     return true;
-  }).sort((a,b)=>{
-    const aL=a[1].updates.length?new Date(a[1].updates[a[1].updates.length-1].time):0;
-    const bL=b[1].updates.length?new Date(b[1].updates[b[1].updates.length-1].time):0;
-    return bL-aL;
-  });
-  document.getElementById('styCount').textContent=`${entries.length} Style${entries.length!==1?'s':''}`;
-  if(!entries.length){c.innerHTML=`<div class="no-results">${Object.keys(STY).length?'No styles match your search.':'No updates yet. Start chatting!'}</div>`;return;}
-  c.innerHTML=entries.map(([id,data])=>{
-    const last=data.updates.length?data.updates[data.updates.length-1]:null;
-    const tl=data.updates.slice().reverse().map(u=>{const t=fmtTime(u.time);
-      return `<div class="timeline-item"><span class="time">${t}</span><span class="user">${esc(u.userName||'')}</span><span class="text">${esc(u.text)}</span></div>`;}).join('');
-    const lt=last?fmtTime(last.time):'';
-    return `<div class="style-card ${data.status||'other'}${id===hl?' ju':''}" onclick="this.classList.toggle('expanded')"><div class="style-card-header"><span class="style-card-id">${id}</span><span class="style-badge ${data.status||'other'}">${cap(data.status||'unknown')}</span></div>${last?`<div class="last-update">${esc(last.text)} — ${lt}</div>`:''}<div class="updates-count">${data.updates.length} update(s) · tap to expand</div><div class="timeline">${tl}</div></div>`;
+  }).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+
+  const totalInProd=Object.values(ORDERS).filter(o=>o.stages&&o.stages.prod_file&&o.stages.prod_file.status==='done').length;
+  document.getElementById('styCount').textContent=`${entries.length} Style${entries.length!==1?'s':''} in Production`;
+
+  if(!entries.length){
+    c.innerHTML=`<div class="no-results">${totalInProd?'No styles match your filter.':'No styles in production yet. Orders appear here once the Production File is handed over.'}</div>`;
+    return;
+  }
+
+  c.innerHTML=entries.map(o=>{
+    const ps=getProductionStatus(o);
+    const pp=getProdProgress(o);
+    const exF=o.exFactoryDate?new Date(o.exFactoryDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+
+    // Build mini production pipeline
+    const pipeline=PROD_STAGES.map(s=>{
+      const sd=o.stages[s.id]||{status:'pending'};
+      const cls=sd.status==='done'?'done':sd.status==='active'?'active':sd.status==='delayed'?'delayed':sd.status==='issue'?'issue':'pending';
+      return `<div class="prod-step ${cls}" title="${s.label}: ${cap(sd.status||'pending')}">
+        <div class="prod-step-icon">${s.icon}</div>
+        <div class="prod-step-label">${s.label}</div>
+        <div class="prod-step-status">${cap(sd.status||'pending')}</div>
+      </div>`;
+    }).join('');
+
+    // Status badge color
+    const badgeCls=ps==='dispatched'?'shipped':ps;
+
+    return `<div class="style-card ${badgeCls}" onclick="this.classList.toggle('expanded')">
+      <div class="style-card-header">
+        <span class="style-card-id">${esc(o.styleNo||o.id)}</span>
+        <span class="style-badge ${badgeCls}">${cap(ps)}</span>
+      </div>
+      <div class="style-card-meta">
+        <span>${esc(o.buyer||'')}</span>
+        ${o.poNumber?'<span>PO: '+esc(o.poNumber)+'</span>':''}
+        <span>Ex-Factory: ${exF}</span>
+      </div>
+      <div class="prod-progress">
+        <div class="prod-progress-bar"><div class="prod-progress-fill" style="width:${pp.pct}%"></div></div>
+        <span class="prod-progress-text">${pp.done}/${pp.total} stages · ${pp.pct}%</span>
+      </div>
+      <div class="prod-pipeline">${pipeline}</div>
+    </div>`;
   }).join('');
 }
 
 function exportCSV(){
-  let csv='Style,Status,By,Time,Update\n';
-  for(const[id,d]of Object.entries(STY))
-    for(const u of d.updates)
-      csv+=`"${id}","${u.status}","${u.userName||''}","${new Date(u.time).toLocaleString()}","${u.text.replace(/"/g,'""')}"\n`;
+  let csv='Style,Buyer,PO,Ex-Factory,Stage,Status,Target Date,Actual Date,Notes,Updated By\n';
+  Object.values(ORDERS).filter(o=>o.stages&&o.stages.prod_file&&o.stages.prod_file.status==='done').forEach(o=>{
+    PROD_STAGES.forEach(s=>{
+      const sd=o.stages[s.id]||{status:'pending'};
+      csv+=`"${o.styleNo||o.id}","${o.buyer||''}","${o.poNumber||''}","${o.exFactoryDate||''}","${s.label}","${sd.status||'pending'}","${sd.targetDate||''}","${sd.actualDate||''}","${(sd.notes||'').replace(/"/g,'""')}","${sd.updatedBy||''}"\n`;
+    });
+  });
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download='style-export.csv';
+  a.download='production-export.csv';
   a.click();
 }
 
@@ -3145,7 +3309,8 @@ async function saveStage(ordId,stageId){
   const actualDate=document.getElementById('otea_'+ordId+'_'+stageId).value;
   const notes=document.getElementById('oten_'+ordId+'_'+stageId).value.trim();
   try{
-    const r=await(await fetch('/api/orders/'+ordId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,status,targetDate,actualDate,notes,userName:me.name,userRole:me.role})})).json();
+    const resp=await fetch('/api/orders/'+ordId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,status,targetDate,actualDate,notes,userName:me.name,userRole:me.role})});
+    const r=await resp.json();
     if(r.ok){
       if(r.approved===false){
         showToast('🔒 Pending Approval','Your update has been sent for admin approval.',false);
@@ -3159,13 +3324,16 @@ async function saveStage(ordId,stageId){
         renderOrders();
         closeStageEdit(ordId,stageId);
       }
-    }else alert('Error saving stage');
+    }else if(r.sequenceError){
+      showToast('⛔ Stage Locked',r.error,true);
+    }else alert(r.error||'Error saving stage');
   }catch(e){alert('Error: '+e.message);}
 }
 
 async function quickDone(ordId,stageId){
   try{
-    const r=await(await fetch('/api/orders/'+ordId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,status:'done',actualDate:new Date().toISOString().split('T')[0],userName:me.name,userRole:me.role})})).json();
+    const resp=await fetch('/api/orders/'+ordId+'/stage',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stageId,status:'done',actualDate:new Date().toISOString().split('T')[0],userName:me.name,userRole:me.role})});
+    const r=await resp.json();
     if(r.ok){
       if(r.approved===false){
         showToast('🔒 Pending Approval','Your update has been sent for admin approval.',false);
@@ -3175,9 +3343,11 @@ async function quickDone(ordId,stageId){
           if(!ORDERS[ordId].history)ORDERS[ordId].history=[];
           ORDERS[ordId].history.push({stageId,status:'done',by:me.name,at:new Date().toISOString()});
         }
-        renderOrders();
+        renderOrders();renderSty();
       }
-    }else alert('Error marking stage done');
+    }else if(r.sequenceError){
+      showToast('⛔ Stage Locked',r.error,true);
+    }else alert(r.error||'Error marking stage done');
   }catch(e){alert('Error: '+e.message);}
 }
 
