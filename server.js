@@ -2196,7 +2196,7 @@ async function checkMailbox(user, pass, label) {
           }
 
           // Only process emails from allowed senders (ERP system + factory team)
-          const isInternalDomain = fromEmail.endsWith('@internetexportsindia.com');
+          const isInternalDomain = fromEmail.endsWith('@internetexportsindia.com') || fromEmail.endsWith('@internetmerchandise.com');
           if (!isInternalDomain && !ALLOWED_EMAIL_SENDERS.includes(fromEmail)) {
             console.log(`  ⏭️ Skipping — sender not in allowed list: ${fromEmail}`);
             continue;
