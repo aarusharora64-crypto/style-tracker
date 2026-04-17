@@ -605,13 +605,15 @@ body{
 }
 .msg-system{
   align-self:center;
-  background:var(--msg-sys);
-  color:#78350f;
+  background:#fef2f2;
+  color:#991b1b;
   font-size:12px;
-  padding:4px 14px;
+  padding:8px 16px;
   border-radius:12px;
   max-width:85%;
   text-align:center;
+  border:1px solid #fecaca;
+  font-weight:500;
 }
 
 .sender-cutting{color:var(--cutting)}.sender-stitching{color:var(--stitching)}.sender-finishing{color:var(--finishing)}.sender-packing{color:var(--packing)}.sender-shipping{color:var(--shipping)}.sender-all{color:var(--red)}
@@ -2647,6 +2649,17 @@ function appendMsg(m,scroll=true){
   }
   const c=document.getElementById('cmsgs'),isM=me&&m.userId===me.id;
   const t=new Date(m.time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+
+  // System messages (e.g. stage sequence warnings)
+  if(m.isSystem||m.userId==='system'){
+    const d=document.createElement('div');
+    d.className='msg msg-system';
+    d.innerHTML=`<span class="time">${t}</span> ${esc(m.text)}`;
+    c.appendChild(d);
+    if(scroll)c.scrollTop=c.scrollHeight;
+    return;
+  }
+
   let h='';
   if(!isM)h+=`<div class="sender-name sender-${m.userDept||''}">${esc(m.userName)}</div>`;
   h+=`<span class="time">${t}</span>`;

@@ -122,6 +122,37 @@ function parseStyleNumber(text) {
   return null;
 }
 
+// Chat status → Order stage mapping (for sequential enforcement via chat)
+const CHAT_STATUS_TO_STAGE = {
+  cutting:   'cutting',
+  stitching: 'stitching',
+  finishing: 'finishing_qc',
+  packing:   'packing',
+  shipped:   'ex_factory'
+};
+
+// Find order by style number
+function findOrderByStyle(styleNo) {
+  if (!styleNo) return null;
+  const upper = styleNo.toUpperCase();
+  return Object.values(db.orders).find(o => {
+    const oStyle = (o.styleNo || '').toUpperCase().replace(/\s+/g, '-');
+    return oStyle === upper || oStyle.replace(/-/g, '') === upper.replace(/-/g, '');
+  }) || null;
+}
+
+// Check if a stage can be activated (previous stage must be done)
+function checkStageSequence(order, stageId) {
+  const idx = ORDER_STAGES.findIndex(s => s.id === stageId);
+  if (idx <= 0) return { allowed: true };
+  const prev = ORDER_STAGES[idx - 1];
+  const prevStatus = order.stages[prev.id] ? order.stages[prev.id].status : 'pending';
+  if (prevStatus !== 'done') {
+    return { allowed: false, blockedBy: prev.label };
+  }
+  return { allowed: true };
+}
+
 // Dept notification mapping
 const DEPT_NOTIFY = {
   cutting:   ['cutting'],
@@ -611,6 +642,32 @@ io.on('connection', (socket) => {
     const styleNum = parseStyleNumber(text);
     const status = styleNum ? detectStatus(text) : null;
     const now = new Date().toISOString();
+
+    // ── Sequential Stage Enforcement via Chat ──
+    // If this chat message maps to a production stage, check if the previous stage is done
+    if (styleNum && status && status !== 'issue' && status !== 'other') {
+      const mappedStage = CHAT_STATUS_TO_STAGE[status];
+      if (mappedStage) {
+        const order = findOrderByStyle(styleNum);
+        if (order) {
+          const check = checkStageSequence(order, mappedStage);
+          if (!check.allowed) {
+            // Send a system reply back to the user
+            const sysMsg = {
+              id: Date.now().toString(36) + 'sys',
+              userId: 'system', userName: 'Style Tracker', userDept: 'system',
+              text: `⛔ Cannot update ${styleNum} to "${status}" — previous stage "${check.blockedBy}" must be completed first. Please complete stages in order.`,
+              styleNum: null, status: null, time: now, isSystem: true
+            };
+            db.messages.push(sysMsg);
+            if (db.messages.length > 5000) db.messages = db.messages.slice(-5000);
+            saveData();
+            io.emit('new-message', sysMsg);
+            return; // Block the update
+          }
+        }
+      }
+    }
 
     const msg = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
