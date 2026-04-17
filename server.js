@@ -17,8 +17,9 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 // ── Email POP3 Config ─────────────────────────────────
 const EMAIL_USER = process.env.EMAIL_USER || 'internetexportsorders@rediffmail.com';
 const EMAIL_PASS = process.env.EMAIL_PASS || '';  // Email password
-const EMAIL_HOST = process.env.EMAIL_HOST || 'pop.rediffmailpro.com';
-const EMAIL_PORT = parseInt(process.env.EMAIL_PORT) || 995;
+const EMAIL_HOST = process.env.EMAIL_HOST || 'pop.rediffmail.com';
+const EMAIL_PORT = parseInt(process.env.EMAIL_PORT) || 110;
+const EMAIL_TLS = EMAIL_PORT === 995;  // Implicit TLS on 995, plain on 110
 const EMAIL_CHECK_INTERVAL = parseInt(process.env.EMAIL_CHECK_INTERVAL) || 60000; // 1 min
 
 // ── Default admin password (change on first login) ──
@@ -923,15 +924,18 @@ async function checkEmails() {
 
   let pop3;
   try {
-    pop3 = new Pop3Command({
+    const pop3Options = {
       user: EMAIL_USER,
       password: EMAIL_PASS,
       host: EMAIL_HOST,
       port: EMAIL_PORT,
-      tls: true,
-      tlsOptions: { rejectUnauthorized: false },
+      tls: EMAIL_TLS,
       timeout: 15000
-    });
+    };
+    if (EMAIL_TLS) {
+      pop3Options.tlsOptions = { rejectUnauthorized: false };
+    }
+    pop3 = new Pop3Command(pop3Options);
 
     await pop3.connect();
 
@@ -1357,6 +1361,7 @@ server.listen(PORT, () => {
   // Start email checking if configured
   if (EMAIL_PASS) {
     console.log(`  📧 Email checking enabled for ${EMAIL_USER} (every ${EMAIL_CHECK_INTERVAL / 1000}s)`);
+    console.log(`  📧 POP3: ${EMAIL_HOST}:${EMAIL_PORT} TLS=${EMAIL_TLS}`);
     // Check immediately on startup, then on interval
     setTimeout(checkEmails, 5000);
     setInterval(checkEmails, EMAIL_CHECK_INTERVAL);
