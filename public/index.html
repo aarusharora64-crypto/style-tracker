@@ -2329,7 +2329,7 @@ body{
         <span class="email-icon">📧</span>
         <div>
           <div class="email-label">Send new orders directly to</div>
-          <div class="email-addr">internetexportsindia202@gmail.com</div>
+          <div class="email-addr">internetexportsindia202@rediffmail.com</div>
         </div>
         <button class="email-copy" onclick="checkEmail()" id="checkEmailBtn" title="Manually check for new order emails">Check Inbox</button>
         <button class="email-copy" onclick="copyEmail()">Copy Email</button>
@@ -3262,7 +3262,7 @@ function toggleOrder(id){
 }
 
 function copyEmail(){
-  navigator.clipboard.writeText('internetexportsindia202@gmail.com').then(()=>{
+  navigator.clipboard.writeText('internetexportsindia202@rediffmail.com').then(()=>{
     const btns=document.querySelectorAll('.email-copy');
     const btn=btns[btns.length-1];
     btn.textContent='Copied!';
