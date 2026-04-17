@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "node-pop3": "^0.11.0",
+    "imapflow": "^1.0.0",
     "mailparser": "^3.6.5",
     "socket.io": "^4.7.4"
   }
