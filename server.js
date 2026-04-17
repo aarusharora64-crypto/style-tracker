@@ -59,6 +59,13 @@ if (!db.pendingChanges) db.pendingChanges = [];
 if (!db.productionUnits) db.productionUnits = [];
 if (!db.dailyProduction) db.dailyProduction = [];
 if (!db.defects) db.defects = [];
+if (!db.purchaseOrders) db.purchaseOrders = {};
+if (!db.fabricInward) db.fabricInward = [];
+if (!db.trimInward) db.trimInward = [];
+if (!db.materialIssue) db.materialIssue = [];
+if (!db.samples) db.samples = [];
+if (!db.shipments) db.shipments = {};
+if (!db.contacts) db.contacts = { buyers: {}, suppliers: {} };
 
 // Migration: Add new fields to existing orders
 Object.values(db.orders).forEach(order => {
@@ -67,6 +74,15 @@ Object.values(db.orders).forEach(order => {
   if (!order.sizeColorStages) order.sizeColorStages = {};
   if (!order.costSheet) order.costSheet = {};
   if (!order.assignment) order.assignment = {};
+  if (!order.season) order.season = '';
+  if (!order.paymentTerms) order.paymentTerms = '';
+  if (!order.shipDate) order.shipDate = '';
+  if (!order.orderDate) order.orderDate = '';
+  if (!order.shipMode) order.shipMode = '';
+  if (!order.currency) order.currency = '';
+  if (!order.fobRate) order.fobRate = '';
+  if (!order.totalValue) order.totalValue = '';
+  if (!order.ourRef) order.ourRef = '';
 });
 saveData();
 
@@ -219,13 +235,15 @@ app.get('/api/orders', (req, res) => res.json(db.orders));
 
 // ── Order Process APIs ────────────────────────────────
 app.post('/api/orders', (req, res) => {
-  const { buyer, styleNo, description, quantity, exFactoryDate, merchant, poNumber } = req.body;
+  const { buyer, styleNo, description, quantity, exFactoryDate, merchant, poNumber, season, paymentTerms, shipDate, orderDate, shipMode, currency, fobRate, totalValue, ourRef } = req.body;
   if (!buyer || !styleNo) return res.status(400).json({ error: 'Buyer and Style No required' });
   const id = 'ORD-' + Date.now().toString(36).toUpperCase();
   const stages = {};
   ORDER_STAGES.forEach(s => { stages[s.id] = { status: 'pending', targetDate: '', actualDate: '', notes: '', updatedBy: '', updatedAt: '' }; });
   const order = {
     id, buyer, styleNo, description: description || '', quantity: parseInt(quantity) || 0, exFactoryDate: exFactoryDate || '', merchant: merchant || '', poNumber: poNumber || '',
+    season: season || '', paymentTerms: paymentTerms || '', shipDate: shipDate || '', orderDate: orderDate || '', shipMode: shipMode || '',
+    currency: currency || '', fobRate: fobRate || '', totalValue: totalValue || '', ourRef: ourRef || '',
     stages,
     stageQuantities: {},
     sizeColorMatrix: [],
@@ -424,7 +442,7 @@ app.post('/api/pending-changes/:id/reject', (req, res) => {
 app.put('/api/orders/:id', (req, res) => {
   const order = db.orders[req.params.id];
   if (!order) return res.status(404).json({ error: 'Order not found' });
-  const { buyer, styleNo, description, quantity, exFactoryDate, merchant, poNumber } = req.body;
+  const { buyer, styleNo, description, quantity, exFactoryDate, merchant, poNumber, season, paymentTerms, shipDate, orderDate, shipMode, currency, fobRate, totalValue, ourRef } = req.body;
   if (buyer) order.buyer = buyer;
   if (styleNo) order.styleNo = styleNo;
   if (description !== undefined) order.description = description;
@@ -432,6 +450,15 @@ app.put('/api/orders/:id', (req, res) => {
   if (exFactoryDate !== undefined) order.exFactoryDate = exFactoryDate;
   if (merchant !== undefined) order.merchant = merchant;
   if (poNumber !== undefined) order.poNumber = poNumber;
+  if (season !== undefined) order.season = season;
+  if (paymentTerms !== undefined) order.paymentTerms = paymentTerms;
+  if (shipDate !== undefined) order.shipDate = shipDate;
+  if (orderDate !== undefined) order.orderDate = orderDate;
+  if (shipMode !== undefined) order.shipMode = shipMode;
+  if (currency !== undefined) order.currency = currency;
+  if (fobRate !== undefined) order.fobRate = fobRate;
+  if (totalValue !== undefined) order.totalValue = totalValue;
+  if (ourRef !== undefined) order.ourRef = ourRef;
   saveData();
   io.emit('order-info-updated', order);
   res.json({ ok: true });
@@ -1223,6 +1250,399 @@ app.delete('/api/production-units/:uid/cutting-tables/:tid', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Purchase Order Management ─────────────────────
+app.get('/api/purchase-orders', (req, res) => {
+  const { orderId, type, status } = req.query;
+  let pos = Object.values(db.purchaseOrders);
+  if (orderId) pos = pos.filter(p => p.orderId === orderId);
+  if (type) pos = pos.filter(p => p.type === type);
+  if (status) pos = pos.filter(p => p.status === status);
+  res.json(pos);
+});
+
+app.post('/api/purchase-orders', (req, res) => {
+  const { orderId, type, supplier, items, totalAmount, currency, notes, createdBy } = req.body;
+  if (!type || !supplier) return res.status(400).json({ error: 'type and supplier required' });
+  const id = 'PO-' + Date.now().toString(36).toUpperCase();
+  const po = {
+    id, orderId: orderId || '', type, // fabric, trim, process
+    supplier, items: items || [], totalAmount: totalAmount || 0, currency: currency || 'INR',
+    notes: notes || '', status: 'draft', // draft, pending_approval, approved, partially_received, received, cancelled
+    createdBy: createdBy || '', createdAt: new Date().toISOString(),
+    approvedBy: '', approvedAt: '', history: []
+  };
+  db.purchaseOrders[id] = po;
+  saveData();
+  io.emit('po-created', po);
+  res.json({ ok: true, po });
+});
+
+app.put('/api/purchase-orders/:id', (req, res) => {
+  const po = db.purchaseOrders[req.params.id];
+  if (!po) return res.status(404).json({ error: 'PO not found' });
+  const fields = ['supplier', 'items', 'totalAmount', 'currency', 'notes', 'orderId', 'type'];
+  fields.forEach(f => { if (req.body[f] !== undefined) po[f] = req.body[f]; });
+  po.history.push({ action: 'updated', by: req.body.userName || '', at: new Date().toISOString() });
+  saveData();
+  io.emit('po-updated', po);
+  res.json({ ok: true, po });
+});
+
+app.put('/api/purchase-orders/:id/status', (req, res) => {
+  const po = db.purchaseOrders[req.params.id];
+  if (!po) return res.status(404).json({ error: 'PO not found' });
+  const { status, userName } = req.body;
+  if (!status) return res.status(400).json({ error: 'status required' });
+  const oldStatus = po.status;
+  po.status = status;
+  if (status === 'approved') { po.approvedBy = userName || ''; po.approvedAt = new Date().toISOString(); }
+  po.history.push({ action: `status: ${oldStatus} → ${status}`, by: userName || '', at: new Date().toISOString() });
+  saveData();
+  io.emit('po-updated', po);
+  io.emit('notify', { title: `PO ${po.id} ${status}`, body: `${po.supplier} - ${po.type} PO ${status}`, targetDepts: ['all'], fromUser: userName || '', at: new Date().toISOString() });
+  res.json({ ok: true, po });
+});
+
+app.delete('/api/purchase-orders/:id', (req, res) => {
+  if (!db.purchaseOrders[req.params.id]) return res.status(404).json({ error: 'PO not found' });
+  delete db.purchaseOrders[req.params.id];
+  saveData();
+  io.emit('po-deleted', req.params.id);
+  res.json({ ok: true });
+});
+
+// ── Inventory / Store Management ──────────────────
+app.get('/api/inventory/fabric', (req, res) => {
+  const { orderId } = req.query;
+  let items = db.fabricInward || [];
+  if (orderId) items = items.filter(i => i.orderId === orderId);
+  res.json(items);
+});
+
+app.post('/api/inventory/fabric', (req, res) => {
+  const { orderId, poId, fabricType, quality, color, quantityReceived, unit, supplierName, challanNo, receivedBy, notes } = req.body;
+  const id = 'FI-' + Date.now().toString(36).toUpperCase();
+  const entry = {
+    id, orderId: orderId || '', poId: poId || '', fabricType: fabricType || '',
+    quality: quality || '', color: color || '', quantityReceived: quantityReceived || 0,
+    unit: unit || 'MTR', supplierName: supplierName || '', challanNo: challanNo || '',
+    receivedBy: receivedBy || '', notes: notes || '', date: new Date().toISOString().split('T')[0],
+    createdAt: new Date().toISOString()
+  };
+  db.fabricInward.push(entry);
+  saveData();
+  io.emit('fabric-inward-created', entry);
+  res.json({ ok: true, entry });
+});
+
+app.get('/api/inventory/trims', (req, res) => {
+  const { orderId } = req.query;
+  let items = db.trimInward || [];
+  if (orderId) items = items.filter(i => i.orderId === orderId);
+  res.json(items);
+});
+
+app.post('/api/inventory/trims', (req, res) => {
+  const { orderId, poId, trimType, description, quantityReceived, unit, supplierName, challanNo, receivedBy, notes } = req.body;
+  const id = 'TI-' + Date.now().toString(36).toUpperCase();
+  const entry = {
+    id, orderId: orderId || '', poId: poId || '', trimType: trimType || '',
+    description: description || '', quantityReceived: quantityReceived || 0,
+    unit: unit || 'PCS', supplierName: supplierName || '', challanNo: challanNo || '',
+    receivedBy: receivedBy || '', notes: notes || '', date: new Date().toISOString().split('T')[0],
+    createdAt: new Date().toISOString()
+  };
+  db.trimInward.push(entry);
+  saveData();
+  io.emit('trim-inward-created', entry);
+  res.json({ ok: true, entry });
+});
+
+app.post('/api/inventory/issue', (req, res) => {
+  const { orderId, materialType, materialId, quantityIssued, issuedTo, issuedBy, notes } = req.body;
+  const id = 'MI-' + Date.now().toString(36).toUpperCase();
+  const entry = {
+    id, orderId: orderId || '', materialType: materialType || '', materialId: materialId || '',
+    quantityIssued: quantityIssued || 0, issuedTo: issuedTo || '', issuedBy: issuedBy || '',
+    notes: notes || '', date: new Date().toISOString().split('T')[0], createdAt: new Date().toISOString()
+  };
+  db.materialIssue.push(entry);
+  saveData();
+  io.emit('material-issued', entry);
+  res.json({ ok: true, entry });
+});
+
+app.get('/api/inventory/issue', (req, res) => {
+  const { orderId } = req.query;
+  let items = db.materialIssue || [];
+  if (orderId) items = items.filter(i => i.orderId === orderId);
+  res.json(items);
+});
+
+app.get('/api/inventory/balance/:orderId', (req, res) => {
+  const orderId = req.params.orderId;
+  const fabricIn = (db.fabricInward || []).filter(i => i.orderId === orderId);
+  const trimIn = (db.trimInward || []).filter(i => i.orderId === orderId);
+  const issued = (db.materialIssue || []).filter(i => i.orderId === orderId);
+
+  const fabricReceived = fabricIn.reduce((sum, i) => sum + (i.quantityReceived || 0), 0);
+  const trimReceived = trimIn.reduce((sum, i) => sum + (i.quantityReceived || 0), 0);
+  const fabricIssued = issued.filter(i => i.materialType === 'fabric').reduce((sum, i) => sum + (i.quantityIssued || 0), 0);
+  const trimIssued = issued.filter(i => i.materialType === 'trim').reduce((sum, i) => sum + (i.quantityIssued || 0), 0);
+
+  res.json({
+    orderId,
+    fabric: { received: fabricReceived, issued: fabricIssued, balance: fabricReceived - fabricIssued, entries: fabricIn },
+    trims: { received: trimReceived, issued: trimIssued, balance: trimReceived - trimIssued, entries: trimIn },
+    issues: issued
+  });
+});
+
+// ── Sampling Management ───────────────────────────
+const SAMPLE_TYPES = ['proto', 'development', 'fit', 'size_set', 'pp', 'production', 'photo', 'salesman'];
+const SAMPLE_STATUSES = ['pending', 'in_progress', 'submitted', 'approved', 'rejected', 'revision'];
+
+app.get('/api/samples', (req, res) => {
+  const { orderId, type, status } = req.query;
+  let samples = db.samples || [];
+  if (orderId) samples = samples.filter(s => s.orderId === orderId);
+  if (type) samples = samples.filter(s => s.type === type);
+  if (status) samples = samples.filter(s => s.status === status);
+  res.json(samples);
+});
+
+app.post('/api/samples', (req, res) => {
+  const { orderId, styleNo, buyer, type, quantity, fabricComposition, description, assignedTo, dueDate, createdBy } = req.body;
+  if (!type) return res.status(400).json({ error: 'sample type required' });
+  const id = 'SMP-' + Date.now().toString(36).toUpperCase();
+  const sample = {
+    id, orderId: orderId || '', styleNo: styleNo || '', buyer: buyer || '',
+    type, quantity: quantity || 1, fabricComposition: fabricComposition || '',
+    description: description || '', assignedTo: assignedTo || '', dueDate: dueDate || '',
+    status: 'pending', courier: null, // { trackingNo, carrier, weight, mode, bookedDate, cost }
+    comments: [], createdBy: createdBy || '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+  };
+  db.samples.push(sample);
+  saveData();
+  io.emit('sample-created', sample);
+  res.json({ ok: true, sample });
+});
+
+app.put('/api/samples/:id', (req, res) => {
+  const sample = (db.samples || []).find(s => s.id === req.params.id);
+  if (!sample) return res.status(404).json({ error: 'Sample not found' });
+  const fields = ['status', 'assignedTo', 'dueDate', 'description', 'quantity', 'fabricComposition'];
+  fields.forEach(f => { if (req.body[f] !== undefined) sample[f] = req.body[f]; });
+  sample.updatedAt = new Date().toISOString();
+  if (req.body.comment) {
+    sample.comments.push({ text: req.body.comment, by: req.body.userName || '', at: new Date().toISOString() });
+  }
+  saveData();
+  io.emit('sample-updated', sample);
+  res.json({ ok: true, sample });
+});
+
+app.put('/api/samples/:id/courier', (req, res) => {
+  const sample = (db.samples || []).find(s => s.id === req.params.id);
+  if (!sample) return res.status(404).json({ error: 'Sample not found' });
+  const { trackingNo, carrier, weight, mode, cost, bookedBy } = req.body;
+  sample.courier = {
+    trackingNo: trackingNo || '', carrier: carrier || '', weight: weight || '',
+    mode: mode || '', cost: cost || '', bookedBy: bookedBy || '',
+    bookedDate: new Date().toISOString().split('T')[0]
+  };
+  sample.updatedAt = new Date().toISOString();
+  saveData();
+  io.emit('sample-updated', sample);
+  res.json({ ok: true, sample });
+});
+
+app.delete('/api/samples/:id', (req, res) => {
+  const idx = (db.samples || []).findIndex(s => s.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Sample not found' });
+  db.samples.splice(idx, 1);
+  saveData();
+  io.emit('sample-deleted', req.params.id);
+  res.json({ ok: true });
+});
+
+// ── Shipment & Documentation ──────────────────────
+app.get('/api/shipments', (req, res) => {
+  const { orderId, status } = req.query;
+  let shipments = Object.values(db.shipments);
+  if (orderId) shipments = shipments.filter(s => s.orderId === orderId);
+  if (status) shipments = shipments.filter(s => s.status === status);
+  res.json(shipments);
+});
+
+app.post('/api/shipments', (req, res) => {
+  const { orderId, buyer, styleNo, quantity, cartons, grossWeight, netWeight, cbm, courierMode, carrier, trackingNo, destination, etd, eta, invoiceNo, notes, createdBy } = req.body;
+  if (!orderId) return res.status(400).json({ error: 'orderId required' });
+  const id = 'SHP-' + Date.now().toString(36).toUpperCase();
+  const shipment = {
+    id, orderId, buyer: buyer || '', styleNo: styleNo || '',
+    quantity: quantity || 0, cartons: cartons || 0,
+    grossWeight: grossWeight || '', netWeight: netWeight || '', cbm: cbm || '',
+    courierMode: courierMode || '', carrier: carrier || '', trackingNo: trackingNo || '',
+    destination: destination || '', etd: etd || '', eta: eta || '',
+    invoiceNo: invoiceNo || '', notes: notes || '',
+    status: 'booked', // booked, dispatched, in_transit, delivered
+    createdBy: createdBy || '', createdAt: new Date().toISOString(), history: []
+  };
+  db.shipments[id] = shipment;
+  saveData();
+  io.emit('shipment-created', shipment);
+  res.json({ ok: true, shipment });
+});
+
+app.put('/api/shipments/:id', (req, res) => {
+  const shipment = db.shipments[req.params.id];
+  if (!shipment) return res.status(404).json({ error: 'Shipment not found' });
+  const fields = ['quantity', 'cartons', 'grossWeight', 'netWeight', 'cbm', 'courierMode', 'carrier', 'trackingNo', 'destination', 'etd', 'eta', 'invoiceNo', 'notes', 'status'];
+  fields.forEach(f => { if (req.body[f] !== undefined) shipment[f] = req.body[f]; });
+  shipment.history.push({ action: 'updated', by: req.body.userName || '', at: new Date().toISOString(), changes: req.body });
+  saveData();
+  io.emit('shipment-updated', shipment);
+  res.json({ ok: true, shipment });
+});
+
+app.delete('/api/shipments/:id', (req, res) => {
+  if (!db.shipments[req.params.id]) return res.status(404).json({ error: 'Shipment not found' });
+  delete db.shipments[req.params.id];
+  saveData();
+  io.emit('shipment-deleted', req.params.id);
+  res.json({ ok: true });
+});
+
+// ── Contacts Directory ────────────────────────────
+app.get('/api/contacts', (req, res) => {
+  res.json(db.contacts);
+});
+
+app.get('/api/contacts/buyers', (req, res) => {
+  res.json(db.contacts.buyers || {});
+});
+
+app.post('/api/contacts/buyers', (req, res) => {
+  const { name, country, email, phone, contactPerson, paymentTerms, notes } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const id = 'BUY-' + Date.now().toString(36).toUpperCase();
+  const buyer = { id, name, country: country || '', email: email || '', phone: phone || '', contactPerson: contactPerson || '', paymentTerms: paymentTerms || '', notes: notes || '', createdAt: new Date().toISOString() };
+  if (!db.contacts.buyers) db.contacts.buyers = {};
+  db.contacts.buyers[id] = buyer;
+  saveData();
+  res.json({ ok: true, buyer });
+});
+
+app.put('/api/contacts/buyers/:id', (req, res) => {
+  const buyer = (db.contacts.buyers || {})[req.params.id];
+  if (!buyer) return res.status(404).json({ error: 'Buyer not found' });
+  const fields = ['name', 'country', 'email', 'phone', 'contactPerson', 'paymentTerms', 'notes'];
+  fields.forEach(f => { if (req.body[f] !== undefined) buyer[f] = req.body[f]; });
+  saveData();
+  res.json({ ok: true, buyer });
+});
+
+app.delete('/api/contacts/buyers/:id', (req, res) => {
+  if (!(db.contacts.buyers || {})[req.params.id]) return res.status(404).json({ error: 'Buyer not found' });
+  delete db.contacts.buyers[req.params.id];
+  saveData();
+  res.json({ ok: true });
+});
+
+app.get('/api/contacts/suppliers', (req, res) => {
+  res.json(db.contacts.suppliers || {});
+});
+
+app.post('/api/contacts/suppliers', (req, res) => {
+  const { name, type, email, phone, contactPerson, address, gstNo, panNo, bankDetails, notes } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const id = 'SUP-' + Date.now().toString(36).toUpperCase();
+  const supplier = { id, name, type: type || '', email: email || '', phone: phone || '', contactPerson: contactPerson || '', address: address || '', gstNo: gstNo || '', panNo: panNo || '', bankDetails: bankDetails || '', notes: notes || '', createdAt: new Date().toISOString() };
+  if (!db.contacts.suppliers) db.contacts.suppliers = {};
+  db.contacts.suppliers[id] = supplier;
+  saveData();
+  res.json({ ok: true, supplier });
+});
+
+app.put('/api/contacts/suppliers/:id', (req, res) => {
+  const supplier = (db.contacts.suppliers || {})[req.params.id];
+  if (!supplier) return res.status(404).json({ error: 'Supplier not found' });
+  const fields = ['name', 'type', 'email', 'phone', 'contactPerson', 'address', 'gstNo', 'panNo', 'bankDetails', 'notes'];
+  fields.forEach(f => { if (req.body[f] !== undefined) supplier[f] = req.body[f]; });
+  saveData();
+  res.json({ ok: true, supplier });
+});
+
+app.delete('/api/contacts/suppliers/:id', (req, res) => {
+  if (!(db.contacts.suppliers || {})[req.params.id]) return res.status(404).json({ error: 'Supplier not found' });
+  delete db.contacts.suppliers[req.params.id];
+  saveData();
+  res.json({ ok: true });
+});
+
+// ── Dashboard / Analytics ─────────────────────────
+app.get('/api/dashboard', (req, res) => {
+  const orders = Object.values(db.orders);
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  // Order stats
+  const totalOrders = orders.length;
+  let activeOrders = 0, completedOrders = 0, overdueOrders = 0, urgentOrders = 0;
+  const stageDistribution = {};
+  ORDER_STAGES.forEach(s => { stageDistribution[s.id] = { label: s.label, count: 0 }; });
+
+  orders.forEach(o => {
+    const doneCount = ORDER_STAGES.filter(s => o.stages[s.id] && o.stages[s.id].status === 'done').length;
+    if (doneCount === ORDER_STAGES.length) { completedOrders++; return; }
+    activeOrders++;
+
+    // Find current stage
+    const currentStage = ORDER_STAGES.find(s => !o.stages[s.id] || o.stages[s.id].status !== 'done');
+    if (currentStage) stageDistribution[currentStage.id].count++;
+
+    // Overdue check
+    if (o.exFactoryDate) {
+      const exDate = new Date(o.exFactoryDate);
+      const daysLeft = Math.round((exDate - today) / 86400000);
+      if (daysLeft < 0) overdueOrders++;
+      else if (daysLeft <= 14) urgentOrders++;
+    }
+  });
+
+  // PO stats
+  const pos = Object.values(db.purchaseOrders || {});
+  const pendingPOs = pos.filter(p => p.status === 'pending_approval').length;
+  const activePOs = pos.filter(p => ['draft', 'pending_approval', 'approved'].includes(p.status)).length;
+
+  // Sample stats
+  const samples = db.samples || [];
+  const pendingSamples = samples.filter(s => s.status === 'pending' || s.status === 'in_progress').length;
+
+  // Shipment stats
+  const shipments = Object.values(db.shipments || {});
+  const activeShipments = shipments.filter(s => s.status !== 'delivered').length;
+
+  // Today's production
+  const todayProduction = (db.dailyProduction || []).filter(e => e.date === todayStr);
+  const todayProduced = todayProduction.reduce((sum, e) => sum + (e.quantityProduced || 0), 0);
+
+  // Pending approvals
+  const pendingApprovals = (db.pendingChanges || []).filter(p => p.status === 'pending').length;
+
+  res.json({
+    orders: { total: totalOrders, active: activeOrders, completed: completedOrders, overdue: overdueOrders, urgent: urgentOrders },
+    stageDistribution,
+    purchaseOrders: { total: pos.length, active: activePOs, pendingApproval: pendingPOs },
+    samples: { total: samples.length, pending: pendingSamples },
+    shipments: { total: shipments.length, active: activeShipments },
+    production: { todayProduced, todayEntries: todayProduction.length },
+    pendingApprovals,
+    contacts: { buyers: Object.keys(db.contacts.buyers || {}).length, suppliers: Object.keys(db.contacts.suppliers || {}).length }
+  });
+});
+
 // ── WebSocket ──────────────────────────────────────────
 io.on('connection', (socket) => {
   socket.on('login', (userId) => {
@@ -1355,9 +1775,11 @@ function parseOrderFromEmail(subject, body, from) {
   const styleDesc = extractField(text, 'Style Desc') || extractField(htmlAndText, 'Style Desc');
   const merchandiser = extractField(text, 'Merchandiser') || extractField(htmlAndText, 'Merchandiser');
   const season = extractField(text, 'Season') || extractField(htmlAndText, 'Season');
-  const rate = extractField(text, 'Rate') || extractField(htmlAndText, 'Rate');
+  const rate = extractField(text, 'Rate(FOB)') || extractField(text, 'Rate') || extractField(htmlAndText, 'Rate(FOB)') || extractField(htmlAndText, 'Rate');
   const totalValue = extractField(text, 'Total Order Value') || extractField(htmlAndText, 'Total Order Value');
   const shipMode = extractField(text, 'Mode of Shipment') || extractField(htmlAndText, 'Mode of Shipment');
+  const paymentTerms = extractField(text, 'Terms of Payment') || extractField(htmlAndText, 'Terms of Payment');
+  const ourRef = extractField(text, 'Our Ref') || extractField(htmlAndText, 'Our Ref');
   const poNumber = extractField(text, 'EO No') || extractField(htmlAndText, 'EO No') || eoNo;
 
   // Quantity
@@ -1370,6 +1792,30 @@ function parseOrderFromEmail(subject, body, from) {
   const shipDate = parseEODate(extractField(text, 'Ship Date') || extractField(htmlAndText, 'Ship Date'));
   const orderDate = parseEODate(extractField(text, 'Order Date') || extractField(htmlAndText, 'Order Date'));
 
+  // Parse FOB Rate and Currency from "11.150000 EUR" format
+  let fobRate = '';
+  let currency = '';
+  if (rate) {
+    const rateMatch = rate.match(/^([\d.]+)\s*([A-Z]{3})?/);
+    if (rateMatch) {
+      fobRate = rateMatch[1];
+      if (rateMatch[2]) currency = rateMatch[2];
+    }
+  }
+
+  // Parse Total Value and Currency from "123456.50 EUR" format
+  let totalValueAmount = '';
+  let totalValueCurrency = '';
+  if (totalValue) {
+    const valueMatch = totalValue.match(/^([\d,.]+)\s*([A-Z]{3})?/);
+    if (valueMatch) {
+      totalValueAmount = valueMatch[1];
+      if (valueMatch[2]) totalValueCurrency = valueMatch[2];
+      // Use currency from totalValue if not already set
+      if (!currency && totalValueCurrency) currency = totalValueCurrency;
+    }
+  }
+
   // Build description with useful info
   const descParts = [];
   if (styleDesc) descParts.push(styleDesc);
@@ -1379,7 +1825,7 @@ function parseOrderFromEmail(subject, body, from) {
   if (shipMode) descParts.push(`Ship: ${shipMode}`);
   const description = descParts.join(' | ');
 
-  return { buyer, styleNo, poNumber, quantity, exFactoryDate, shipDate, orderDate, description, merchandiser };
+  return { buyer, styleNo, poNumber, quantity, exFactoryDate, shipDate, orderDate, description, merchandiser, season, paymentTerms, ourRef, fobRate, currency, totalValue: totalValueAmount };
 }
 
 async function checkEmails() {
@@ -1473,6 +1919,15 @@ async function checkEmails() {
               exFactoryDate: orderData.exFactoryDate,
               merchant: orderData.merchandiser || '',
               poNumber: orderData.poNumber,
+              season: orderData.season || '',
+              paymentTerms: orderData.paymentTerms || '',
+              shipDate: orderData.shipDate || '',
+              orderDate: orderData.orderDate || '',
+              shipMode: orderData.shipMode || '',
+              currency: orderData.currency || '',
+              fobRate: orderData.fobRate || '',
+              totalValue: orderData.totalValue || '',
+              ourRef: orderData.ourRef || '',
               stages,
               stageQuantities: {},
               sizeColorMatrix: [],
