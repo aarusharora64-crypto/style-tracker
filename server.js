@@ -57,6 +57,18 @@ if (!db.orders) db.orders = {};
 if (!db.deptPasswords) db.deptPasswords = {};
 if (!db.pendingChanges) db.pendingChanges = [];
 if (!db.productionUnits) db.productionUnits = [];
+if (!db.dailyProduction) db.dailyProduction = [];
+if (!db.defects) db.defects = [];
+
+// Migration: Add new fields to existing orders
+Object.values(db.orders).forEach(order => {
+  if (!order.stageQuantities) order.stageQuantities = {};
+  if (!order.sizeColorMatrix) order.sizeColorMatrix = [];
+  if (!order.sizeColorStages) order.sizeColorStages = {};
+  if (!order.costSheet) order.costSheet = {};
+  if (!order.assignment) order.assignment = {};
+});
+saveData();
 
 // Default department passwords (admin can change these)
 const DEFAULT_DEPT_PASSWORDS = {
@@ -212,7 +224,17 @@ app.post('/api/orders', (req, res) => {
   const id = 'ORD-' + Date.now().toString(36).toUpperCase();
   const stages = {};
   ORDER_STAGES.forEach(s => { stages[s.id] = { status: 'pending', targetDate: '', actualDate: '', notes: '', updatedBy: '', updatedAt: '' }; });
-  const order = { id, buyer, styleNo, description: description || '', quantity: parseInt(quantity) || 0, exFactoryDate: exFactoryDate || '', merchant: merchant || '', poNumber: poNumber || '', stages, createdAt: new Date().toISOString(), history: [] };
+  const order = {
+    id, buyer, styleNo, description: description || '', quantity: parseInt(quantity) || 0, exFactoryDate: exFactoryDate || '', merchant: merchant || '', poNumber: poNumber || '',
+    stages,
+    stageQuantities: {},
+    sizeColorMatrix: [],
+    sizeColorStages: {},
+    costSheet: {},
+    assignment: {},
+    createdAt: new Date().toISOString(),
+    history: []
+  };
   db.orders[id] = order;
   saveData();
   io.emit('order-created', order);
@@ -421,6 +443,449 @@ app.delete('/api/orders/:id', (req, res) => {
   saveData();
   io.emit('order-deleted', req.params.id);
   res.json({ ok: true });
+});
+
+// ── Stage-wise Quantity Tracking ────────────────────
+app.put('/api/orders/:id/stage-quantity', (req, res) => {
+  const order = db.orders[req.params.id];
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const { stageId, quantityReceived, quantityCompleted, quantityRejected, userName } = req.body;
+  if (!stageId) return res.status(400).json({ error: 'stageId required' });
+
+  if (!order.stageQuantities) order.stageQuantities = {};
+  order.stageQuantities[stageId] = {
+    quantityReceived: quantityReceived || 0,
+    quantityCompleted: quantityCompleted || 0,
+    quantityRejected: quantityRejected || 0,
+    updatedBy: userName || '',
+    updatedAt: new Date().toISOString()
+  };
+  saveData();
+  io.emit('order-updated', { orderId: req.params.id, stageQuantities: order.stageQuantities });
+  res.json({ ok: true, stageQuantities: order.stageQuantities });
+});
+
+app.get('/api/orders/:id/yield', (req, res) => {
+  const order = db.orders[req.params.id];
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+
+  const stageQuantities = order.stageQuantities || {};
+  const stageYields = [];
+  const shortageAlerts = [];
+
+  ORDER_STAGES.forEach(stage => {
+    if (stageQuantities[stage.id]) {
+      const sq = stageQuantities[stage.id];
+      const yieldPercent = sq.quantityReceived > 0
+        ? Math.round((sq.quantityCompleted / sq.quantityReceived) * 100)
+        : 0;
+
+      stageYields.push({
+        stage: stage.label,
+        stageId: stage.id,
+        received: sq.quantityReceived,
+        completed: sq.quantityCompleted,
+        rejected: sq.quantityRejected,
+        yieldPercent
+      });
+
+      // Flag shortage if received < order quantity
+      if (sq.quantityReceived < order.quantity) {
+        shortageAlerts.push({
+          stage: stage.label,
+          stageId: stage.id,
+          received: sq.quantityReceived,
+          expected: order.quantity,
+          shortage: order.quantity - sq.quantityReceived,
+          shortagePercent: Math.round(((order.quantity - sq.quantityReceived) / order.quantity) * 100)
+        });
+      }
+    }
+  });
+
+  // Overall yield: final packed / order quantity
+  const packingStage = stageQuantities['packing'];
+  const overallYield = packingStage && packingStage.quantityCompleted
+    ? Math.round((packingStage.quantityCompleted / order.quantity) * 100)
+    : 0;
+
+  res.json({
+    orderId: req.params.id,
+    orderQuantity: order.quantity,
+    stageYields,
+    overallYield,
+    shortageAlerts
+  });
+});
+
+// ── Size-Color Matrix ────────────────────────────────
+app.put('/api/orders/:id/size-color', (req, res) => {
+  const order = db.orders[req.params.id];
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const { sizeColorMatrix } = req.body;
+  if (!Array.isArray(sizeColorMatrix)) return res.status(400).json({ error: 'sizeColorMatrix must be an array' });
+
+  order.sizeColorMatrix = sizeColorMatrix;
+  saveData();
+  io.emit('order-updated', { orderId: req.params.id, sizeColorMatrix });
+  res.json({ ok: true, sizeColorMatrix: order.sizeColorMatrix });
+});
+
+app.put('/api/orders/:id/size-color-stage', (req, res) => {
+  const order = db.orders[req.params.id];
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const { stageId, sizeColorBreakdown } = req.body;
+  if (!stageId || !Array.isArray(sizeColorBreakdown)) {
+    return res.status(400).json({ error: 'stageId and sizeColorBreakdown (array) required' });
+  }
+
+  if (!order.sizeColorStages) order.sizeColorStages = {};
+  order.sizeColorStages[stageId] = sizeColorBreakdown;
+  saveData();
+  io.emit('order-updated', { orderId: req.params.id, sizeColorStages: order.sizeColorStages });
+  res.json({ ok: true, sizeColorStages: order.sizeColorStages });
+});
+
+// ── Daily Production Logging ────────────────────────
+app.post('/api/daily-production', (req, res) => {
+  const { date, orderId, unitId, lineId, stage, quantityProduced, quantityRejected, targetQuantity, userName } = req.body;
+  if (!date || !orderId || !stage) {
+    return res.status(400).json({ error: 'date, orderId, and stage required' });
+  }
+
+  const id = 'DP-' + Date.now().toString(36).toUpperCase();
+  const entry = {
+    id,
+    date,
+    orderId,
+    unitId: unitId || '',
+    lineId: lineId || '',
+    stage,
+    quantityProduced: quantityProduced || 0,
+    quantityRejected: quantityRejected || 0,
+    targetQuantity: targetQuantity || 0,
+    userName: userName || '',
+    createdAt: new Date().toISOString()
+  };
+
+  db.dailyProduction.push(entry);
+  saveData();
+  io.emit('daily-production-created', entry);
+  res.json({ ok: true, entry });
+});
+
+app.get('/api/daily-production', (req, res) => {
+  const { date, orderId } = req.query;
+  let results = db.dailyProduction || [];
+
+  if (date) {
+    results = results.filter(e => e.date === date);
+  }
+  if (orderId) {
+    results = results.filter(e => e.orderId === orderId);
+  }
+
+  res.json(results);
+});
+
+app.get('/api/daily-production/summary', (req, res) => {
+  const { from, to } = req.query;
+  let entries = db.dailyProduction || [];
+
+  if (from) {
+    entries = entries.filter(e => e.date >= from);
+  }
+  if (to) {
+    entries = entries.filter(e => e.date <= to);
+  }
+
+  // Aggregate by date
+  const summary = {};
+  entries.forEach(e => {
+    if (!summary[e.date]) {
+      summary[e.date] = {
+        date: e.date,
+        totalProduced: 0,
+        totalRejected: 0,
+        totalTarget: 0,
+        entries: 0
+      };
+    }
+    summary[e.date].totalProduced += e.quantityProduced || 0;
+    summary[e.date].totalRejected += e.quantityRejected || 0;
+    summary[e.date].totalTarget += e.targetQuantity || 0;
+    summary[e.date].entries++;
+  });
+
+  res.json(Object.values(summary).sort((a, b) => a.date.localeCompare(b.date)));
+});
+
+// ── Production Unit Assignment ──────────────────────
+app.put('/api/orders/:id/assignment', (req, res) => {
+  const order = db.orders[req.params.id];
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const { unitId, lineIds, cuttingTableIds } = req.body;
+
+  order.assignment = {
+    unitId: unitId || '',
+    lineIds: lineIds || [],
+    cuttingTableIds: cuttingTableIds || [],
+    assignedAt: new Date().toISOString()
+  };
+
+  saveData();
+  io.emit('order-updated', { orderId: req.params.id, assignment: order.assignment });
+  res.json({ ok: true, assignment: order.assignment });
+});
+
+// ── Defect/QC Tracking ──────────────────────────────
+// Standard defect types
+const DEFECT_TYPES = [
+  { id: 'broken_stitch', label: 'Broken Stitch', category: 'stitching' },
+  { id: 'skip_stitch', label: 'Skip Stitch', category: 'stitching' },
+  { id: 'open_seam', label: 'Open Seam', category: 'stitching' },
+  { id: 'uneven_hem', label: 'Uneven Hem', category: 'stitching' },
+  { id: 'puckering', label: 'Puckering', category: 'stitching' },
+  { id: 'raw_edge', label: 'Raw Edge', category: 'stitching' },
+  { id: 'shade_variation', label: 'Shade Variation', category: 'fabric' },
+  { id: 'fabric_defect', label: 'Fabric Defect', category: 'fabric' },
+  { id: 'stain', label: 'Stain/Spot', category: 'fabric' },
+  { id: 'hole', label: 'Hole', category: 'fabric' },
+  { id: 'measurement_out', label: 'Measurement Out', category: 'measurement' },
+  { id: 'size_mismatch', label: 'Size Label Mismatch', category: 'measurement' },
+  { id: 'pressing_mark', label: 'Pressing Mark', category: 'finishing' },
+  { id: 'iron_damage', label: 'Iron Damage', category: 'finishing' },
+  { id: 'poor_folding', label: 'Poor Folding', category: 'packing' },
+  { id: 'wrong_label', label: 'Wrong Label/Tag', category: 'labeling' },
+  { id: 'missing_trim', label: 'Missing Trim/Accessory', category: 'trims' },
+  { id: 'other', label: 'Other', category: 'other' }
+];
+
+app.get('/api/defect-types', (req, res) => {
+  res.json(DEFECT_TYPES);
+});
+
+app.post('/api/orders/:id/defects', (req, res) => {
+  const order = db.orders[req.params.id];
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+
+  const { stage, defectType, severity, quantity, description, action, inspector } = req.body;
+  if (!stage || !defectType) {
+    return res.status(400).json({ error: 'stage and defectType required' });
+  }
+
+  const id = 'DEF-' + Date.now().toString(36).toUpperCase();
+  const defect = {
+    id,
+    orderId: req.params.id,
+    stage,
+    defectType,
+    severity: severity || 'minor',
+    quantity: quantity || 1,
+    description: description || '',
+    action: action || '',
+    inspector: inspector || '',
+    createdAt: new Date().toISOString()
+  };
+
+  db.defects.push(defect);
+  saveData();
+  io.emit('defect-created', defect);
+  res.json({ ok: true, defect });
+});
+
+app.get('/api/orders/:id/defects', (req, res) => {
+  const orderId = req.params.id;
+  const defects = (db.defects || []).filter(d => d.orderId === orderId);
+  res.json(defects);
+});
+
+app.get('/api/defect-summary', (req, res) => {
+  const { orderId } = req.query;
+  const defects = orderId
+    ? (db.defects || []).filter(d => d.orderId === orderId)
+    : (db.defects || []);
+
+  let totalDefects = 0;
+  const byType = {};
+  const byStage = {};
+  const bySeverity = {};
+  let totalQuantity = 0;
+
+  defects.forEach(d => {
+    totalDefects++;
+    totalQuantity += d.quantity || 1;
+
+    if (!byType[d.defectType]) byType[d.defectType] = 0;
+    byType[d.defectType]++;
+
+    if (!byStage[d.stage]) byStage[d.stage] = 0;
+    byStage[d.stage]++;
+
+    if (!bySeverity[d.severity]) bySeverity[d.severity] = 0;
+    bySeverity[d.severity]++;
+  });
+
+  const defectRate = totalQuantity > 0 ? Math.round((totalDefects / totalQuantity) * 100) / 100 : 0;
+
+  res.json({
+    totalDefects,
+    totalQuantity,
+    defectRate,
+    byType,
+    byStage,
+    bySeverity
+  });
+});
+
+// ── Lightweight Costing ─────────────────────────────
+app.put('/api/orders/:id/cost-sheet', (req, res) => {
+  const order = db.orders[req.params.id];
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+
+  const costSheet = req.body;
+  order.costSheet = costSheet;
+  saveData();
+  io.emit('order-updated', { orderId: req.params.id, costSheet });
+  res.json({ ok: true, costSheet: order.costSheet });
+});
+
+app.get('/api/orders/:id/cost-sheet', (req, res) => {
+  const order = db.orders[req.params.id];
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  res.json(order.costSheet || {});
+});
+
+// ── CSV Export ──────────────────────────────────────
+function escapeCSV(str) {
+  if (!str) return '';
+  const s = String(str);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+app.get('/api/exports/orders', (req, res) => {
+  const orders = Object.values(db.orders);
+  const rows = [['Order ID', 'Buyer', 'Style No', 'PO Number', 'Quantity', 'Ex-Factory Date', 'Current Stage', 'Progress %', 'Created At']];
+
+  orders.forEach(o => {
+    const doneStages = ORDER_STAGES.filter(s => o.stages[s.id] && o.stages[s.id].status === 'done').length;
+    const progressPct = Math.round((doneStages / ORDER_STAGES.length) * 100);
+    const currentStage = ORDER_STAGES.find(s => !o.stages[s.id] || o.stages[s.id].status !== 'done');
+
+    rows.push([
+      escapeCSV(o.id),
+      escapeCSV(o.buyer),
+      escapeCSV(o.styleNo),
+      escapeCSV(o.poNumber),
+      o.quantity,
+      escapeCSV(o.exFactoryDate),
+      escapeCSV(currentStage ? currentStage.label : 'Complete'),
+      progressPct,
+      escapeCSV(o.createdAt)
+    ]);
+  });
+
+  const csv = rows.map(r => r.join(',')).join('\n');
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="orders.csv"');
+  res.send(csv);
+});
+
+app.get('/api/exports/daily-production', (req, res) => {
+  const { from, to } = req.query;
+  let entries = db.dailyProduction || [];
+
+  if (from) entries = entries.filter(e => e.date >= from);
+  if (to) entries = entries.filter(e => e.date <= to);
+
+  const rows = [['ID', 'Date', 'Order ID', 'Unit ID', 'Line ID', 'Stage', 'Quantity Produced', 'Quantity Rejected', 'Target Quantity', 'User Name', 'Created At']];
+
+  entries.forEach(e => {
+    rows.push([
+      escapeCSV(e.id),
+      escapeCSV(e.date),
+      escapeCSV(e.orderId),
+      escapeCSV(e.unitId),
+      escapeCSV(e.lineId),
+      escapeCSV(e.stage),
+      e.quantityProduced,
+      e.quantityRejected,
+      e.targetQuantity,
+      escapeCSV(e.userName),
+      escapeCSV(e.createdAt)
+    ]);
+  });
+
+  const csv = rows.map(r => r.join(',')).join('\n');
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="daily-production.csv"');
+  res.send(csv);
+});
+
+app.get('/api/exports/defects', (req, res) => {
+  const { orderId } = req.query;
+  const defects = orderId
+    ? (db.defects || []).filter(d => d.orderId === orderId)
+    : (db.defects || []);
+
+  const rows = [['ID', 'Order ID', 'Stage', 'Defect Type', 'Severity', 'Quantity', 'Description', 'Action', 'Inspector', 'Created At']];
+
+  defects.forEach(d => {
+    rows.push([
+      escapeCSV(d.id),
+      escapeCSV(d.orderId),
+      escapeCSV(d.stage),
+      escapeCSV(d.defectType),
+      escapeCSV(d.severity),
+      d.quantity,
+      escapeCSV(d.description),
+      escapeCSV(d.action),
+      escapeCSV(d.inspector),
+      escapeCSV(d.createdAt)
+    ]);
+  });
+
+  const csv = rows.map(r => r.join(',')).join('\n');
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="defects.csv"');
+  res.send(csv);
+});
+
+// ── Shortage Alert Endpoint ─────────────────────────
+app.get('/api/alerts/shortages', (req, res) => {
+  const alerts = [];
+  const orders = Object.values(db.orders);
+
+  orders.forEach(order => {
+    const stageQuantities = order.stageQuantities || {};
+
+    ORDER_STAGES.forEach(stage => {
+      if (stageQuantities[stage.id]) {
+        const sq = stageQuantities[stage.id];
+        if (sq.quantityReceived < order.quantity) {
+          alerts.push({
+            orderId: order.id,
+            buyer: order.buyer,
+            styleNo: order.styleNo,
+            orderQuantity: order.quantity,
+            stage: stage.label,
+            stageId: stage.id,
+            received: sq.quantityReceived,
+            shortage: order.quantity - sq.quantityReceived,
+            shortagePercent: Math.round(((order.quantity - sq.quantityReceived) / order.quantity) * 100)
+          });
+        }
+      }
+    });
+  });
+
+  // Sort by shortage percentage descending
+  alerts.sort((a, b) => b.shortagePercent - a.shortagePercent);
+
+  res.json(alerts);
 });
 
 // ── Buyer Analytics / Self-Learning Engine ────────────
@@ -1009,6 +1474,11 @@ async function checkEmails() {
               merchant: orderData.merchandiser || '',
               poNumber: orderData.poNumber,
               stages,
+              stageQuantities: {},
+              sizeColorMatrix: [],
+              sizeColorStages: {},
+              costSheet: {},
+              assignment: {},
               createdAt: new Date().toISOString(),
               history: [{ stageId: 'order_confirm', status: 'pending', notes: `Auto-created from ERP alert: EO ${orderData.poNumber}`, by: 'ERP System', at: new Date().toISOString() }],
               source: 'email',

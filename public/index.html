@@ -2060,6 +2060,103 @@ body{
   .timeline-stages{grid-template-columns:repeat(2,1fr)}
 }
 
+/* ═══════════════════════════════════════════
+   PRODUCTION TAB (NEW)
+   ═══════════════════════════════════════════ */
+#productionView{background:var(--bg);overflow-y:auto}
+.production-tabs{display:flex;gap:8px;padding:16px 20px 0;border-bottom:1px solid var(--border);margin-bottom:0}
+.prod-tab-btn{background:none;border:none;padding:10px 14px;font-size:13px;font-weight:600;color:var(--text-secondary);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;font-family:inherit;text-transform:uppercase;letter-spacing:0.3px}
+.prod-tab-btn:hover{color:var(--text)}
+.prod-tab-btn.active{color:var(--primary);border-bottom-color:var(--primary)}
+.prod-content-area{flex:1;overflow-y:auto;padding:20px}
+
+/* Daily Production Entry */
+.daily-prod-form{background:var(--surface);border-radius:12px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.08)}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+.form-grid .form-field{margin-bottom:0}
+.form-field.full{grid-column:1/-1}
+.daily-prod-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--surface);border-radius:8px;overflow:hidden;margin-top:16px}
+.daily-prod-table thead{background:var(--bg)}
+.daily-prod-table th{padding:10px 12px;font-weight:600;color:var(--text);text-align:left;border-bottom:1px solid var(--border)}
+.daily-prod-table td{padding:10px 12px;border-bottom:1px solid var(--border)}
+.daily-prod-table tbody tr:hover{background:#f9fafb}
+.daily-prod-table .efficiency{font-weight:600;color:var(--primary)}
+
+/* Defect Log */
+.defect-form{background:var(--surface);border-radius:12px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.08)}
+.severity-options{display:flex;gap:16px;margin-top:6px}
+.severity-radio{display:flex;align-items:center;gap:6px}
+.severity-radio input[type="radio"]{cursor:pointer}
+.severity-radio label{cursor:pointer;font-size:12px}
+.defect-table{width:100%;border-collapse:collapse;font-size:12px;background:var(--surface);border-radius:8px;overflow:hidden;margin-top:16px}
+.defect-table thead{background:var(--bg)}
+.defect-table th{padding:10px 12px;font-weight:600;color:var(--text);text-align:left;border-bottom:1px solid var(--border)}
+.defect-table td{padding:10px 12px;border-bottom:1px solid var(--border)}
+.defect-table tbody tr:hover{background:#f9fafb}
+.severity-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-weight:600;font-size:10px;text-transform:uppercase}
+.severity-critical{background:#fee2e2;color:#991b1b}
+.severity-major{background:#fef3c7;color:#92400e}
+.severity-minor{background:#dbeafe;color:#1e40af}
+
+/* Shortage Alerts */
+.alerts-container{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:16px}
+.alert-card{background:var(--surface);border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid var(--warning)}
+.alert-card.critical{border-left-color:var(--danger)}
+.alert-card.orange{border-left-color:var(--warning)}
+.alert-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.alert-title{font-size:12px;font-weight:600;color:var(--text)}
+.alert-shortage-pct{font-size:14px;font-weight:700;color:var(--danger)}
+.alert-card.orange .alert-shortage-pct{color:var(--warning)}
+.alert-detail-row{display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin:4px 0}
+.alert-detail-row .label{font-weight:600}
+.shortage-bar{width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:8px}
+.shortage-fill{height:100%;background:var(--danger);border-radius:3px;transition:width 0.3s}
+
+/* Enhanced Order Cards - Collapsible sections */
+.order-card-section{border-top:1px solid var(--border);margin-top:12px;padding-top:12px;display:none}
+.order-card.expanded .order-card-section{display:block}
+.order-section-title{font-size:12px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.qty-tracker-table{width:100%;border-collapse:collapse;font-size:11px;background:var(--bg);border-radius:6px;overflow:hidden}
+.qty-tracker-table th,.qty-tracker-table td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--border)}
+.qty-tracker-table th{background:var(--border);font-weight:600;color:var(--text)}
+.qty-tracker-table tbody tr:hover{background:#f3f4f6}
+.qty-add-btn{padding:4px 10px;font-size:10px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600}
+.qty-add-btn:hover{background:var(--primary-light)}
+.order-yield-summary{font-size:12px;color:var(--text-secondary);margin-top:8px;padding:8px;background:var(--bg);border-radius:6px}
+.order-yield-summary .value{font-weight:600;color:var(--primary)}
+
+/* Size-Color Matrix */
+.matrix-grid{display:grid;gap:1px;background:var(--border);border-radius:6px;overflow:hidden;margin-top:10px;padding:1px}
+.matrix-header{background:var(--border);font-weight:600;font-size:10px;padding:6px;text-align:center}
+.matrix-cell{background:var(--surface);padding:6px;text-align:center;font-size:10px}
+.matrix-cell.size-label,.matrix-cell.color-label{background:var(--bg);font-weight:600}
+.edit-matrix-btn{padding:4px 10px;font-size:10px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600}
+
+/* Cost Summary */
+.cost-summary{background:var(--bg);border-radius:6px;padding:10px;font-size:11px;margin-top:10px;cursor:pointer;transition:all 0.2s}
+.cost-summary:hover{background:#f3f4f6}
+.cost-line{display:flex;justify-content:space-between;margin:4px 0}
+.cost-label{color:var(--text-secondary)}
+.cost-value{font-weight:600;color:var(--text)}
+
+/* Export buttons */
+.export-btn{
+  padding:8px 14px;
+  border-radius:6px;
+  border:1px solid var(--border);
+  background:var(--surface);
+  color:var(--primary);
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all 0.15s;
+  font-family:inherit;
+}
+.export-btn:hover{
+  background:var(--bg);
+  border-color:var(--primary);
+}
+
 /* PWA install prompt banner */
 .pwa-install-banner{
   display:none;
@@ -2343,6 +2440,7 @@ body{
           <option value="delayed">Delayed</option>
         </select>
         <button class="btn-new-order" onclick="openOrderModal()">+ New Order</button>
+        <button class="export-btn" onclick="exportOrdersCSV()">📥 Export CSV</button>
       </div>
 
       <div class="orders-stats" id="orderStats"></div>
@@ -2469,8 +2567,191 @@ body{
     </div>
   </div>
 
-  <!-- PRODUCTION PLANNING VIEW -->
+  <!-- PRODUCTION VIEW (NEW) -->
   <div id="productionView" class="view">
+    <div style="display:flex;flex-direction:column;height:100%">
+      <div class="production-tabs">
+        <button class="prod-tab-btn active" onclick="switchProdTab('entry')">📊 Daily Entry</button>
+        <button class="prod-tab-btn" onclick="switchProdTab('defects')">❌ Defect Log</button>
+        <button class="prod-tab-btn" onclick="switchProdTab('alerts')">⚠️ Shortages</button>
+      </div>
+      <div class="prod-content-area" style="flex:1;overflow-y:auto">
+
+        <!-- Daily Production Entry Tab -->
+        <div id="prodTabEntry" style="display:block">
+          <div class="daily-prod-form">
+            <h4 style="margin-top:0;color:var(--primary);font-size:14px">📥 Daily Production Entry</h4>
+            <div class="form-grid">
+              <div class="form-field">
+                <label>Date</label>
+                <input type="date" id="dpDate" />
+              </div>
+              <div class="form-field">
+                <label>Order</label>
+                <select id="dpOrder">
+                  <option value="">-- Select Order --</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Production Unit</label>
+                <select id="dpUnit">
+                  <option value="">-- Select Unit --</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Sewing Line</label>
+                <select id="dpLine">
+                  <option value="">-- Select Line --</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Stage</label>
+                <select id="dpStage">
+                  <option value="cutting">Cutting</option>
+                  <option value="stitching">Stitching</option>
+                  <option value="finishing">Finishing</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Target Qty</label>
+                <input type="number" id="dpTarget" placeholder="0" />
+              </div>
+              <div class="form-field">
+                <label>Produced Qty</label>
+                <input type="number" id="dpProduced" placeholder="0" />
+              </div>
+              <div class="form-field">
+                <label>Rejected Qty</label>
+                <input type="number" id="dpRejected" placeholder="0" />
+              </div>
+              <div class="form-field full" style="margin-bottom:0">
+                <button class="btn-primary" onclick="saveDailyProduction()" style="width:100%;padding:10px">💾 Submit Entry</button>
+              </div>
+            </div>
+          </div>
+
+          <h4 style="color:var(--primary);margin-bottom:12px">📋 Today's Production Log</h4>
+          <table class="daily-prod-table">
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th>Style</th>
+                <th>Line</th>
+                <th>Stage</th>
+                <th style="text-align:right">Target</th>
+                <th style="text-align:right">Produced</th>
+                <th style="text-align:right">Rejected</th>
+                <th style="text-align:right">Efficiency%</th>
+              </tr>
+            </thead>
+            <tbody id="dpTableBody">
+              <tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:20px">No entries yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Defect Log Tab -->
+        <div id="prodTabDefects" style="display:none">
+          <div class="defect-form">
+            <h4 style="margin-top:0;color:var(--primary);font-size:14px">⚠️ Log Defect</h4>
+            <div class="form-grid">
+              <div class="form-field">
+                <label>Order</label>
+                <select id="dlOrder">
+                  <option value="">-- Select Order --</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Stage</label>
+                <select id="dlStage">
+                  <option value="cutting">Cutting</option>
+                  <option value="stitching">Stitching</option>
+                  <option value="finishing">Finishing</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Defect Type</label>
+                <select id="dlDefectType">
+                  <option value="">-- Select Type --</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Quantity Affected</label>
+                <input type="number" id="dlQty" placeholder="0" />
+              </div>
+              <div class="form-field">
+                <label>Severity</label>
+                <div class="severity-options">
+                  <div class="severity-radio">
+                    <input type="radio" id="dlSevCrit" name="dlSeverity" value="critical" />
+                    <label for="dlSevCrit">Critical</label>
+                  </div>
+                  <div class="severity-radio">
+                    <input type="radio" id="dlSevMaj" name="dlSeverity" value="major" checked />
+                    <label for="dlSevMaj">Major</label>
+                  </div>
+                  <div class="severity-radio">
+                    <input type="radio" id="dlSevMin" name="dlSeverity" value="minor" />
+                    <label for="dlSevMin">Minor</label>
+                  </div>
+                </div>
+              </div>
+              <div class="form-field full">
+                <label>Description</label>
+                <textarea id="dlDesc" placeholder="Describe the defect..." style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:60px"></textarea>
+              </div>
+              <div class="form-field">
+                <label>Action</label>
+                <select id="dlAction">
+                  <option value="rework">Rework</option>
+                  <option value="reject">Reject</option>
+                  <option value="accept">Accept</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label>Inspector Name</label>
+                <input type="text" id="dlInspector" placeholder="Your name" />
+              </div>
+              <div class="form-field full" style="margin-bottom:0">
+                <button class="btn-primary" onclick="saveDefect()" style="width:100%;padding:10px">📝 Log Defect</button>
+              </div>
+            </div>
+          </div>
+
+          <h4 style="color:var(--primary);margin-bottom:12px">❌ Recent Defects</h4>
+          <table class="defect-table">
+            <thead>
+              <tr>
+                <th>Order</th>
+                <th>Stage</th>
+                <th>Defect Type</th>
+                <th>Qty</th>
+                <th>Severity</th>
+                <th>Action</th>
+                <th>Inspector</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="dlTableBody">
+              <tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:20px">No defects logged</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Shortage Alerts Tab -->
+        <div id="prodTabAlerts" style="display:none">
+          <h4 style="color:var(--primary);margin-bottom:12px">📦 Material Shortages</h4>
+          <div class="alerts-container" id="alertsContainer">
+            <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-secondary)">Loading shortage data...</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- PRODUCTION PLANNING VIEW -->
+  <div id="productionView" class="view" style="display:none">
     <div class="production-container">
       <div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
         <h3 style="font-size:18px;font-weight:700;color:var(--primary);margin:0">Production Units</h3>
@@ -3127,7 +3408,7 @@ function sw(v){
   if(v==='admin'){renderTeam();loadDeptPasswords();}
   if(v==='orders')renderOrders();
   if(v==='approvals')loadPendingChanges();
-  if(v==='production')loadProdUnits();
+  if(v==='production')loadProductionData();
 }
 
 // ═══════════════════════════════════════════
@@ -3564,6 +3845,231 @@ async function saveCT(){
   try{const url=tid?`/api/production-units/${uid}/cutting-tables/${tid}`:`/api/production-units/${uid}/cutting-tables`;const r=await(await fetch(url,{method:tid?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();if(r.ok||r.table){await loadProdUnits();closeCTModal();}else alert(r.error||'Error');}catch(e){alert('Error: '+e.message);}
 }
 async function deleteCT(uid,tid){if(!confirm('Delete this cutting table?'))return;try{await fetch(`/api/production-units/${uid}/cutting-tables/${tid}`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPin})});await loadProdUnits();}catch(e){alert('Error: '+e.message);}}
+
+// ═══════════════════════════════════════════
+// PRODUCTION - NEW TAB
+// ═══════════════════════════════════════════
+let dailyProdData=[],defectData=[],defectTypes=[];
+
+async function loadProductionData(){
+  try{
+    const today=new Date().toISOString().split('T')[0];
+    const[dpResp,defResp,dtResp,alertResp]=await Promise.all([
+      fetch('/api/daily-production?date='+today).then(r=>r.json()).catch(()=>[]),
+      fetch('/api/orders/defects').then(r=>r.json()).catch(()=>[]),
+      fetch('/api/defect-types').then(r=>r.json()).catch(()=>[]),
+      fetch('/api/alerts/shortages').then(r=>r.json()).catch(()=>[])
+    ]);
+    dailyProdData=dpResp.data||dpResp||[];
+    defectData=defResp.data||defResp||[];
+    defectTypes=dtResp.types||dtResp||[];
+    renderDailyProduction();
+    renderDefectLog();
+    renderShortageAlerts();
+    populateProductionDropdowns();
+  }catch(e){console.error('Load prod data:',e);}
+}
+
+function populateProductionDropdowns(){
+  const ordSel=document.getElementById('dpOrder');
+  const dlSel=document.getElementById('dlOrder');
+  ordSel.innerHTML='<option value="">-- Select Order --</option>';
+  dlSel.innerHTML='<option value="">-- Select Order --</option>';
+  Object.values(ORDERS).forEach(o=>{
+    const opt1=document.createElement('option');
+    opt1.value=o.id;
+    opt1.textContent=`${o.styleNo} (${o.buyer})`;
+    ordSel.appendChild(opt1);
+    const opt2=opt1.cloneNode();
+    dlSel.appendChild(opt2);
+  });
+
+  const unitSel=document.getElementById('dpUnit');
+  unitSel.innerHTML='<option value="">-- Select Unit --</option>';
+  prodUnits.forEach(u=>{
+    const opt=document.createElement('option');
+    opt.value=u.id;
+    opt.textContent=u.name;
+    unitSel.appendChild(opt);
+  });
+
+  document.getElementById('dpUnit').addEventListener('change',e=>{
+    const unitId=e.target.value;
+    const lineSel=document.getElementById('dpLine');
+    lineSel.innerHTML='<option value="">-- Select Line --</option>';
+    const unit=prodUnits.find(u=>u.id===unitId);
+    if(unit){
+      (unit.sewingLines||[]).forEach(l=>{
+        const opt=document.createElement('option');
+        opt.value=l.id;
+        opt.textContent=l.name;
+        lineSel.appendChild(opt);
+      });
+    }
+  });
+
+  const defTypeSel=document.getElementById('dlDefectType');
+  defTypeSel.innerHTML='<option value="">-- Select Type --</option>';
+  defectTypes.forEach(dt=>{
+    const opt=document.createElement('option');
+    opt.value=dt;
+    opt.textContent=cap(dt.replace(/_/g,' '));
+    defTypeSel.appendChild(opt);
+  });
+
+  const dateInp=document.getElementById('dpDate');
+  const today=new Date().toISOString().split('T')[0];
+  dateInp.value=today;
+  dateInp.max=today;
+}
+
+async function saveDailyProduction(){
+  const data={
+    date:document.getElementById('dpDate').value,
+    orderId:document.getElementById('dpOrder').value,
+    unitId:document.getElementById('dpUnit').value,
+    lineId:document.getElementById('dpLine').value,
+    stage:document.getElementById('dpStage').value,
+    targetQty:parseInt(document.getElementById('dpTarget').value)||0,
+    producedQty:parseInt(document.getElementById('dpProduced').value)||0,
+    rejectedQty:parseInt(document.getElementById('dpRejected').value)||0
+  };
+  if(!data.orderId||!data.unitId){showToast('⚠️ Missing Fields','Select order and unit',true);return;}
+  try{
+    const r=await(await fetch('/api/daily-production',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})).json();
+    if(r.ok||r.id){
+      showToast('✅ Entry Saved','Production entry recorded',false);
+      document.getElementById('dpTarget').value='';document.getElementById('dpProduced').value='';document.getElementById('dpRejected').value='';
+      await loadProductionData();
+    }else showToast('❌ Error',r.error||'Failed to save',true);
+  }catch(e){showToast('❌ Error',e.message,true);}
+}
+
+function renderDailyProduction(){
+  const tbody=document.getElementById('dpTableBody');
+  if(!dailyProdData.length){tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:20px">No entries yet</td></tr>';return;}
+  tbody.innerHTML=dailyProdData.map(d=>{
+    const eff=d.targetQty?Math.round(d.producedQty/d.targetQty*100):0;
+    const order=ORDERS[d.orderId];
+    return `<tr>
+      <td>${order?order.styleNo||order.id:d.orderId}</td>
+      <td>${order?order.buyer:'—'}</td>
+      <td>${d.lineId||'—'}</td>
+      <td>${cap(d.stage)}</td>
+      <td style="text-align:right">${d.targetQty}</td>
+      <td style="text-align:right">${d.producedQty}</td>
+      <td style="text-align:right">${d.rejectedQty}</td>
+      <td style="text-align:right" class="efficiency">${eff}%</td>
+    </tr>`;
+  }).join('');
+}
+
+async function saveDefect(){
+  const data={
+    orderId:document.getElementById('dlOrder').value,
+    stage:document.getElementById('dlStage').value,
+    defectType:document.getElementById('dlDefectType').value,
+    quantity:parseInt(document.getElementById('dlQty').value)||0,
+    severity:document.querySelector('input[name="dlSeverity"]:checked').value,
+    description:document.getElementById('dlDesc').value,
+    action:document.getElementById('dlAction').value,
+    inspectorName:document.getElementById('dlInspector').value.trim()||'Anonymous'
+  };
+  if(!data.orderId||!data.defectType){showToast('⚠️ Missing Fields','Select order and defect type',true);return;}
+  try{
+    const r=await(await fetch(`/api/orders/${data.orderId}/defects`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})).json();
+    if(r.ok||r.id){
+      showToast('✅ Defect Logged','Issue recorded for order',false);
+      document.getElementById('dlQty').value='';document.getElementById('dlDesc').value='';document.getElementById('dlInspector').value='';
+      await loadProductionData();
+    }else showToast('❌ Error',r.error||'Failed to log defect',true);
+  }catch(e){showToast('❌ Error',e.message,true);}
+}
+
+function renderDefectLog(){
+  const tbody=document.getElementById('dlTableBody');
+  if(!defectData.length){tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:20px">No defects logged</td></tr>';return;}
+  tbody.innerHTML=defectData.slice().reverse().slice(0,50).map(d=>{
+    const order=ORDERS[d.orderId];
+    const dateStr=new Date(d.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+    return `<tr>
+      <td>${order?order.styleNo||order.id:d.orderId}</td>
+      <td>${cap(d.stage)}</td>
+      <td>${cap(d.defectType.replace(/_/g,' '))}</td>
+      <td>${d.quantity}</td>
+      <td><span class="severity-badge severity-${d.severity}">${d.severity}</span></td>
+      <td>${cap(d.action)}</td>
+      <td>${esc(d.inspectorName)}</td>
+      <td>${dateStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderShortageAlerts(){
+  const c=document.getElementById('alertsContainer');
+  // Mock shortage data - in real app, this comes from API
+  const alerts=[
+    {orderId:Object.keys(ORDERS)[0],buyer:'Sample Buyer',style:'ST-001',stage:'cutting',orderQty:1000,received:600,shortage:400,shortagePercent:40},
+    {orderId:Object.keys(ORDERS)[1],buyer:'Sample Buyer 2',style:'ST-002',stage:'stitching',orderQty:500,received:480,shortage:20,shortagePercent:4}
+  ].filter(a=>ORDERS[a.orderId]);
+
+  if(!alerts.length){
+    c.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-secondary)">No shortages detected - all materials in stock!</div>';
+    return;
+  }
+
+  c.innerHTML=alerts.map(a=>{
+    const cls=a.shortagePercent>50?'critical':a.shortagePercent>20?'orange':'yellow';
+    const fillPct=Math.min(100,a.shortagePercent);
+    return `<div class="alert-card ${cls}">
+      <div class="alert-header">
+        <div>
+          <div class="alert-title">${esc(a.style)}</div>
+          <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">${esc(a.buyer)}</div>
+        </div>
+        <div class="alert-shortage-pct">${a.shortagePercent}%</div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px">
+        <div class="alert-detail-row"><span class="label">Stage:</span><span>${cap(a.stage)}</span></div>
+        <div class="alert-detail-row"><span class="label">Order Qty:</span><span>${a.orderQty.toLocaleString()}</span></div>
+        <div class="alert-detail-row"><span class="label">Received:</span><span>${a.received.toLocaleString()}</span></div>
+        <div class="alert-detail-row"><span class="label">Shortage:</span><span style="font-weight:600;color:var(--danger)">${a.shortage.toLocaleString()}</span></div>
+        <div class="shortage-bar"><div class="shortage-fill" style="width:${fillPct}%"></div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function switchProdTab(tab){
+  document.getElementById('prodTabEntry').style.display='none';
+  document.getElementById('prodTabDefects').style.display='none';
+  document.getElementById('prodTabAlerts').style.display='none';
+  document.querySelectorAll('.prod-tab-btn').forEach(b=>b.classList.remove('active'));
+
+  if(tab==='entry'){document.getElementById('prodTabEntry').style.display='block'}
+  else if(tab==='defects'){document.getElementById('prodTabDefects').style.display='block'}
+  else if(tab==='alerts'){document.getElementById('prodTabAlerts').style.display='block'}
+
+  document.querySelector(`.prod-tab-btn[onclick*="${tab}"]`).classList.add('active');
+}
+
+function exportOrdersCSV(){
+  let csv='ID,Buyer,Style,PO,Description,Quantity,ExFactory,Merchant,Status,Progress\n';
+  Object.values(ORDERS).forEach(o=>{
+    const p=getOrderProgress(o);
+    csv+=`"${o.id}","${o.buyer||''}","${o.styleNo||''}","${o.poNumber||''}","${(o.description||'').replace(/"/g,'""')}",${o.quantity||0},"${o.exFactoryDate||''}","${o.merchant||''}","${getOrderStatus(o)}",${p.pct}%\n`;
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='orders-export-'+new Date().toISOString().split('T')[0]+'.csv';
+  a.click();
+}
+
+// Wire up WebSocket events for real-time updates
+if(socket){
+  socket.on('daily-production-created',d=>{dailyProdData.push(d);renderDailyProduction();});
+  socket.on('defect-created',d=>{defectData.push(d);renderDefectLog();});
+}
 
 // ═══════════════════════════════════════════
 // AI ASSISTANT
