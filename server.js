@@ -22,6 +22,10 @@ const EMAIL_PORT = parseInt(process.env.EMAIL_PORT) || 993;
 const EMAIL_TLS = EMAIL_PORT === 993;  // Implicit TLS on 993
 const EMAIL_CHECK_INTERVAL = parseInt(process.env.EMAIL_CHECK_INTERVAL) || 60000; // 1 min
 
+// EDP2 inbox config (second mailbox for workflow emails)
+const EDP2_EMAIL_USER = process.env.EDP2_EMAIL_USER || '';
+const EDP2_EMAIL_PASS = process.env.EDP2_EMAIL_PASS || '';
+
 // ── Default admin password (change on first login) ──
 const DEFAULT_ADMIN_PIN = '1234';
 
@@ -1733,7 +1737,22 @@ io.on('connection', (socket) => {
 
 // ── Email-to-Order Integration ────────────────────────
 // Only process emails from ERP system
-const ALLOWED_EMAIL_SENDERS = ['alert@internetexportsindia.com'];
+const ALLOWED_EMAIL_SENDERS = [
+  'alert@internetexportsindia.com',   // ERP auto-alerts
+  'store1@internetexportsindia.com',   // Ravi — Fabric Store
+  'fabricstore@internetexportsindia.com', // Amarjeet — Fabric Store
+  'store5@internetexportsindia.com',   // Jagjit — ERP Associate
+  'store4@internetexportsindia.com',   // Amit — Trim Store
+  'mer1@internetexportsindia.com',     // Divya — Merchandiser
+  'docs2@internetexportsindia.com',    // Mohit — Documentation
+  'docs@internetexportsindia.com',     // Shailesh — Documentation
+  'edp@internetexportsindia.com',      // Ashish — EDP
+  'edp2@internetexportsindia.com',     // Ratan — EDP2
+  'assit2ie@internetexportsindia.com', // Asst documentation
+  'vikas@internetexportsindia.com',    // Vikas
+  'vijay@internetexportsindia.com',    // Vijay — Accounts
+  'orders@internetexportsindia.com',   // Orders inbox
+];
 
 function extractField(text, fieldName) {
   // Match "FieldName\tValue" or "FieldName  Value" pattern from ERP emails
@@ -2122,10 +2141,8 @@ function getModuleForType(emailType) {
   return moduleMap[emailType] || 'general';
 }
 
-async function checkEmails() {
-  if (!EMAIL_PASS) {
-    return; // No password configured, skip silently
-  }
+async function checkMailbox(user, pass, label) {
+  if (!pass) return;
 
   let client;
   try {
@@ -2133,10 +2150,7 @@ async function checkEmails() {
       host: EMAIL_HOST,
       port: EMAIL_PORT,
       secure: EMAIL_TLS,
-      auth: {
-        user: EMAIL_USER,
-        pass: EMAIL_PASS
-      },
+      auth: { user, pass },
       tls: { rejectUnauthorized: false },
       logger: false
     });
@@ -2181,9 +2195,10 @@ async function checkEmails() {
             db.processedEmailUIDs = db.processedEmailUIDs.slice(-500);
           }
 
-          // Only process emails from allowed senders (ERP system)
-          if (!ALLOWED_EMAIL_SENDERS.includes(fromEmail)) {
-            console.log(`  ⏭️ Skipping — sender not in allowed list`);
+          // Only process emails from allowed senders (ERP system + factory team)
+          const isInternalDomain = fromEmail.endsWith('@internetexportsindia.com');
+          if (!isInternalDomain && !ALLOWED_EMAIL_SENDERS.includes(fromEmail)) {
+            console.log(`  ⏭️ Skipping — sender not in allowed list: ${fromEmail}`);
             continue;
           }
 
@@ -2193,7 +2208,7 @@ async function checkEmails() {
 
           // Classify and process email with workflow engine
           const emailDate = parsed.date ? new Date(parsed.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-          const workflowResult = classifyAndProcessEmail(subject, fullBody, fromEmail, EMAIL_USER, emailDate);
+          const workflowResult = classifyAndProcessEmail(subject, fullBody, fromEmail, user, emailDate);
           if (workflowResult.processed) {
             console.log(`  🔄 Workflow: ${workflowResult.emailType} — ${workflowResult.actions.join(', ')}`);
             io.emit('workflow-processed', {
@@ -2204,8 +2219,19 @@ async function checkEmails() {
             });
           }
 
-          // Create order if we have buyer or style
+          // Create order if we have buyer or style — but check for duplicates first
           if (orderData.buyer || orderData.styleNo) {
+            // Dedup: skip if an order with the same Our Ref or same PO + Style already exists
+            const existingOrders = Object.values(db.orders);
+            const isDuplicate = existingOrders.some(o => {
+              if (orderData.ourRef && o.ourRef && o.ourRef === orderData.ourRef) return true;
+              if (orderData.poNumber && o.poNumber === orderData.poNumber && orderData.styleNo && o.styleNo === orderData.styleNo) return true;
+              return false;
+            });
+            if (isDuplicate) {
+              console.log(`  ⏭️ Skipping duplicate order — Our Ref: ${orderData.ourRef || 'N/A'}, PO: ${orderData.poNumber}, Style: ${orderData.styleNo}`);
+              continue;
+            }
             const id = 'ORD-' + Date.now().toString(36).toUpperCase();
             const stages = {};
             ORDER_STAGES.forEach(s => {
@@ -2275,14 +2301,22 @@ async function checkEmails() {
 
     await client.logout();
   } catch (err) {
-    console.error('IMAP error:', err.message);
+    console.error(`IMAP error (${label}):`, err.message);
     try { if (client) await client.logout(); } catch (e) { /* ignore logout error */ }
+  }
+}
+
+// Check all configured mailboxes
+async function checkEmails() {
+  await checkMailbox(EMAIL_USER, EMAIL_PASS, 'orders');
+  if (EDP2_EMAIL_USER && EDP2_EMAIL_PASS) {
+    await checkMailbox(EDP2_EMAIL_USER, EDP2_EMAIL_PASS, 'edp2');
   }
 }
 
 // ── Email Check API (manual trigger) ──────────────────
 app.post('/api/check-email', (req, res) => {
-  if (!EMAIL_PASS) return res.status(400).json({ error: 'Email not configured. Set EMAIL_PASS environment variable.' });
+  if (!EMAIL_PASS && !EDP2_EMAIL_PASS) return res.status(400).json({ error: 'Email not configured. Set EMAIL_PASS environment variable.' });
   checkEmails();
   res.json({ ok: true, message: 'Email check triggered' });
 });
@@ -2291,6 +2325,8 @@ app.get('/api/email-status', (req, res) => {
   res.json({
     configured: !!EMAIL_PASS,
     email: EMAIL_USER,
+    edp2Configured: !!(EDP2_EMAIL_USER && EDP2_EMAIL_PASS),
+    edp2Email: EDP2_EMAIL_USER || 'not configured',
     checkInterval: EMAIL_CHECK_INTERVAL / 1000 + 's'
   });
 });
@@ -2758,8 +2794,9 @@ server.listen(PORT, () => {
   console.log(`  Admin PIN: ${db.settings.adminPin} (change this in Admin settings)`);
 
   // Start email checking if configured
-  if (EMAIL_PASS) {
-    console.log(`  📧 Email checking enabled for ${EMAIL_USER} (every ${EMAIL_CHECK_INTERVAL / 1000}s)`);
+  if (EMAIL_PASS || EDP2_EMAIL_PASS) {
+    if (EMAIL_PASS) console.log(`  📧 Inbox 1: ${EMAIL_USER} (every ${EMAIL_CHECK_INTERVAL / 1000}s)`);
+    if (EDP2_EMAIL_PASS) console.log(`  📧 Inbox 2: ${EDP2_EMAIL_USER} (every ${EMAIL_CHECK_INTERVAL / 1000}s)`);
     console.log(`  📧 IMAP: ${EMAIL_HOST}:${EMAIL_PORT} TLS=${EMAIL_TLS}`);
     // Check immediately on startup, then on interval
     setTimeout(checkEmails, 5000);
