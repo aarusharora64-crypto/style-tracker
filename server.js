@@ -935,26 +935,30 @@ async function checkEmails() {
 
     await pop3.connect();
 
-    // Get list of messages with UIDs
-    const uidList = await pop3.UIDL();
-    if (!uidList || uidList.length === 0) {
+    // Get list of messages (returns array of [msgNum, size] pairs)
+    const msgList = await pop3.LIST();
+    if (!msgList || msgList.length === 0) {
       await pop3.QUIT();
       return;
     }
 
-    // Filter out already-processed emails
-    const newMessages = uidList.filter(([msgNum, uid]) => !db.processedEmailUIDs.includes(uid));
-    if (newMessages.length === 0) {
-      await pop3.QUIT();
-      return;
-    }
+    let newCount = 0;
 
-    console.log(`📧 Found ${newMessages.length} new email(s)`);
-
-    for (const [msgNum, uid] of newMessages) {
+    for (const [msgNum] of msgList) {
       try {
         const rawEmail = await pop3.RETR(msgNum);
         const parsed = await simpleParser(rawEmail);
+
+        // Use Message-ID header to track processed emails
+        const messageId = parsed.messageId || parsed.headers.get('message-id') || `${parsed.date}-${msgNum}`;
+
+        // Skip already-processed emails
+        if (db.processedEmailUIDs.includes(messageId)) {
+          continue;
+        }
+
+        newCount++;
+        if (newCount === 1) console.log(`📧 Processing new email(s)...`);
 
         const from = parsed.from ? parsed.from.text : '';
         const fromEmail = parsed.from && parsed.from.value && parsed.from.value[0] ? parsed.from.value[0].address.toLowerCase() : '';
@@ -965,8 +969,8 @@ async function checkEmails() {
         console.log(`  📩 Email from: ${from} (${fromEmail}) | Subject: ${subject}`);
 
         // Mark as processed regardless of sender
-        db.processedEmailUIDs.push(uid);
-        // Keep only the last 500 UIDs to avoid unbounded growth
+        db.processedEmailUIDs.push(messageId);
+        // Keep only the last 500 IDs to avoid unbounded growth
         if (db.processedEmailUIDs.length > 500) {
           db.processedEmailUIDs = db.processedEmailUIDs.slice(-500);
         }
