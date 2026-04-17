@@ -1362,7 +1362,7 @@ server.listen(PORT, () => {
   // Start email checking if configured
   if (EMAIL_PASS) {
     console.log(`  📧 Email checking enabled for ${EMAIL_USER} (every ${EMAIL_CHECK_INTERVAL / 1000}s)`);
-    console.log(`  📧 POP3: ${EMAIL_HOST}:${EMAIL_PORT} TLS=${EMAIL_TLS}`);
+    console.log(`  📧 IMAP: ${EMAIL_HOST}:${EMAIL_PORT} TLS=${EMAIL_TLS}`);
     // Check immediately on startup, then on interval
     setTimeout(checkEmails, 5000);
     setInterval(checkEmails, EMAIL_CHECK_INTERVAL);
