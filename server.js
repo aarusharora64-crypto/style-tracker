@@ -263,6 +263,8 @@ app.post('/api/orders', (req, res) => {
   db.orders[id] = order;
   saveData();
   io.emit('order-created', order);
+  // Auto-create FX position if foreign currency
+  try { createFXPosition(order); } catch(e) { /* FX module may not be initialized yet */ }
   res.json({ ok: true, order });
 });
 
@@ -2275,6 +2277,8 @@ async function checkMailbox(user, pass, label) {
             };
 
             db.orders[id] = order;
+            // Auto-create FX position for email-created orders
+            try { createFXPosition(order); } catch(e) { /* FX not ready */ }
             io.emit('order-created', order);
             io.emit('notify', {
               title: `📧 New EO: ${orderData.poNumber} — ${orderData.buyer}`,
@@ -2789,8 +2793,710 @@ app.put('/api/costings/:orderId', (req, res) => {
   res.json(costing);
 });
 
+// ══════════════════════════════════════════════════════════════
+// ── FX EXPOSURE MODULE ───────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+if (!db.fxPositions) db.fxPositions = [];
+if (!db.fxRates) db.fxRates = [];
+
+// Auto-create FX position from order (called when order is created)
+function createFXPosition(order) {
+  if (!order.currency || !order.totalValue) return null;
+  const currency = order.currency.toUpperCase();
+  if (currency === 'INR') return null; // No FX risk for domestic
+  const amount = parseFloat(String(order.totalValue).replace(/,/g, '')) || 0;
+  if (amount <= 0) return null;
+
+  // Check for existing position for this order
+  const existing = db.fxPositions.find(p => p.orderId === order.id);
+  if (existing) return existing;
+
+  const position = {
+    id: 'FX-' + Date.now().toString(36).toUpperCase(),
+    orderId: order.id,
+    buyer: order.buyer || '',
+    styleNo: order.styleNo || '',
+    currency,
+    amount,
+    fobRate: parseFloat(order.fobRate) || 0,
+    bookingRate: null, // INR rate at time of booking — set manually or from rate feed
+    hedged: false,
+    hedgeRate: null,
+    hedgeDate: null,
+    shipDate: order.exFactoryDate || order.shipDate || '',
+    status: 'open', // open, hedged, partial_hedge, settled
+    createdAt: new Date().toISOString()
+  };
+  db.fxPositions.push(position);
+  saveData();
+  io.emit('fx-position-created', position);
+  return position;
+}
+
+// Create FX positions for any existing orders that don't have one
+Object.values(db.orders).forEach(o => createFXPosition(o));
+
+// FX Rate fetching (free API)
+async function fetchFXRates() {
+  try {
+    const resp = await fetch('https://open.er-api.com/v6/latest/INR');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.rates) {
+      const rate = {
+        date: new Date().toISOString().split('T')[0],
+        usd_inr: data.rates.USD ? parseFloat((1 / data.rates.USD).toFixed(4)) : null,
+        eur_inr: data.rates.EUR ? parseFloat((1 / data.rates.EUR).toFixed(4)) : null,
+        gbp_inr: data.rates.GBP ? parseFloat((1 / data.rates.GBP).toFixed(4)) : null,
+        source: 'open.er-api.com',
+        fetchedAt: new Date().toISOString()
+      };
+      // Only add one entry per day
+      const todayExists = db.fxRates.find(r => r.date === rate.date);
+      if (!todayExists) {
+        db.fxRates.push(rate);
+        if (db.fxRates.length > 365) db.fxRates = db.fxRates.slice(-365);
+        saveData();
+        console.log(`  💱 FX Rates: USD/INR ${rate.usd_inr}, EUR/INR ${rate.eur_inr}`);
+      }
+    }
+  } catch (e) {
+    console.error('FX rate fetch error:', e.message);
+  }
+}
+
+// FX API endpoints
+app.get('/api/fx/positions', (req, res) => {
+  const { status, currency } = req.query;
+  let positions = db.fxPositions || [];
+  if (status) positions = positions.filter(p => p.status === status);
+  if (currency) positions = positions.filter(p => p.currency === currency.toUpperCase());
+  res.json(positions);
+});
+
+app.get('/api/fx/summary', (req, res) => {
+  const open = (db.fxPositions || []).filter(p => p.status === 'open' || p.status === 'partial_hedge');
+  const summary = {};
+  open.forEach(p => {
+    if (!summary[p.currency]) summary[p.currency] = { currency: p.currency, totalAmount: 0, positions: 0, totalINR: 0 };
+    summary[p.currency].totalAmount += p.amount;
+    summary[p.currency].positions++;
+  });
+  // Add current rates
+  const latestRate = db.fxRates.length ? db.fxRates[db.fxRates.length - 1] : {};
+  const rateMap = { USD: latestRate.usd_inr, EUR: latestRate.eur_inr, GBP: latestRate.gbp_inr };
+  Object.values(summary).forEach(s => {
+    s.currentRate = rateMap[s.currency] || null;
+    s.totalINR = s.currentRate ? Math.round(s.totalAmount * s.currentRate) : 0;
+  });
+  res.json({ summary: Object.values(summary), latestRates: latestRate, totalPositions: open.length });
+});
+
+app.put('/api/fx/positions/:id', (req, res) => {
+  const pos = (db.fxPositions || []).find(p => p.id === req.params.id);
+  if (!pos) return res.status(404).json({ error: 'Position not found' });
+  const { status, hedgeRate, hedgeDate, bookingRate, notes } = req.body;
+  if (status) pos.status = status;
+  if (hedgeRate) { pos.hedgeRate = parseFloat(hedgeRate); pos.hedged = true; }
+  if (hedgeDate) pos.hedgeDate = hedgeDate;
+  if (bookingRate) pos.bookingRate = parseFloat(bookingRate);
+  if (notes) pos.notes = notes;
+  saveData();
+  io.emit('fx-position-updated', pos);
+  res.json({ ok: true, position: pos });
+});
+
+app.get('/api/fx/rates', (req, res) => {
+  const { days } = req.query;
+  const limit = parseInt(days) || 30;
+  res.json(db.fxRates.slice(-limit));
+});
+
+// ══════════════════════════════════════════════════════════════
+// ── MULTI-AGENT SYSTEM ───────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+const cron = require('node-cron');
+
+if (!db.agentReports) db.agentReports = [];
+if (!db.decisions) db.decisions = [];
+
+// ── Agent Runner ─────────────────────────────────────────────
+async function runAgent(role, systemPrompt, dataBuilder) {
+  if (!CLAUDE_API_KEY) { console.log(`  🤖 Agent ${role} skipped — no API key`); return null; }
+  try {
+    const data = dataBuilder();
+    const response = await callClaude(systemPrompt, data);
+    const priority = (response.includes('URGENT') || response.includes('CRITICAL')) ? 'high'
+      : response.includes('WATCH') ? 'medium' : 'low';
+
+    // Extract action items (lines starting with ACTION: or numbered actions)
+    const actionItems = [];
+    response.split('\n').forEach(line => {
+      const cleaned = line.trim();
+      if (cleaned.match(/^(ACTION:|→\s*ACTION:|\d+\.\s*ACTION:)/i)) {
+        actionItems.push(cleaned.replace(/^(ACTION:|→\s*ACTION:|\d+\.\s*ACTION:)\s*/i, ''));
+      }
+    });
+
+    const report = {
+      id: 'RPT-' + Date.now().toString(36).toUpperCase(),
+      agentRole: role,
+      title: `${role.toUpperCase()} Report — ${new Date().toLocaleDateString('en-IN')}`,
+      content: response,
+      priority,
+      actionItems,
+      createdAt: new Date().toISOString(),
+      acknowledged: false,
+      acknowledgedBy: null
+    };
+
+    db.agentReports.push(report);
+    if (db.agentReports.length > 500) db.agentReports = db.agentReports.slice(-500);
+    saveData();
+
+    io.emit('agent-report', report);
+    console.log(`  🤖 Agent ${role}: report generated (${priority} priority, ${actionItems.length} actions)`);
+
+    if (priority === 'high') {
+      io.emit('notify', {
+        title: `🤖 ${role.toUpperCase()}: Action Required`,
+        body: actionItems[0] || response.slice(0, 120),
+        targetDepts: ['all'], fromUser: `AI-${role}`, at: new Date().toISOString()
+      });
+    }
+    return report;
+  } catch (e) {
+    console.error(`  🤖 Agent ${role} error:`, e.message);
+    return null;
+  }
+}
+
+// ── Agent Prompts ────────────────────────────────────────────
+
+const AGENT_PROMPTS = {
+  ceo: `You are the CEO advisor for Internet Exports India, a garment export factory.
+Your job: identify the 3 biggest risks and 3 most important decisions this week.
+
+Rules:
+- Be brutally concise. Max 300 words.
+- Start with REVENUE AT RISK: total value of overdue + critical orders
+- List TOP RISKS with specific order IDs and buyer names
+- List DECISIONS NEEDED with recommended action
+- If FX exposure is high, flag it
+- End with PRIORITIES for the week (3 bullet points max)
+- Mark anything urgent with "URGENT:" prefix
+- Action items must start with "ACTION:" prefix
+You are advising a small factory owner who checks this once a week. Be direct.`,
+
+  cfo: `You are the CFO advisor for Internet Exports India, a garment export company.
+You manage FX risk for EUR and USD receivables against INR.
+
+Rules:
+- Start with EXPOSURE SUMMARY: total open by currency
+- Show UNREALIZED P&L: current rate vs booking rate if available
+- RATE TREND: based on history, is rate rising/falling/stable?
+- For each major position (>$10K equivalent):
+  - HEDGE if rate is at/near 30-day high and shipment is >30 days away
+  - WAIT if rate is trending up and shipment is soon
+  - URGENT if unrealized loss exceeds 2% of position value
+- COLLECTIONS: flag any orders shipped but payment not received
+- Keep it under 250 words. Use numbers, not paragraphs.
+- ACTION items must start with "ACTION:" prefix`,
+
+  coo: `You are the COO advisor for Internet Exports India garment factory.
+Your morning briefing tells the owner what needs attention TODAY.
+
+Rules:
+- Start with: X orders active, Y overdue, Z shipping this week
+- CRITICAL ORDERS: any where days-to-ship < stages-remaining × 5 days
+- BOTTLENECKS: which stage has the most orders stuck
+- MATERIAL GAPS: orders waiting for fabric/trims not yet received
+- APPROVALS PENDING: count and oldest item
+- TODAY'S PRIORITIES: 3 specific actions
+- Max 200 words. Be a factory manager, not a consultant.
+- ACTION items must start with "ACTION:" prefix`,
+
+  cto: `You are the CTO advisor for Style Tracker, a Node.js factory ERP.
+Your job: keep the system healthy and suggest practical improvements.
+
+Rules:
+- SYSTEM STATUS: email checking working? Data integrity OK?
+- DATA HEALTH: orders count, emails processed, unclassified emails
+- PARSING ACCURACY: how many emails classified as 'general' vs specific types?
+- TOP IMPROVEMENT: one specific feature that would save the most time this week
+- RISK: any single point of failure
+- Max 150 words. Technical but actionable.
+- ACTION items must start with "ACTION:" prefix`,
+
+  hr: `You are the HR advisor for a 50-person garment export factory.
+Your job: spot workload imbalances and team bottlenecks.
+
+Rules:
+- WORKLOAD: which departments have the most active orders?
+- BOTTLENECK PEOPLE: who has the most pending actions/approvals?
+- ATTENDANCE: any patterns from attendance emails?
+- INACTIVE ALERT: any department not updating stages in 3+ days
+- RECOMMENDATION: one staffing or process change
+- Max 150 words. Practical HR head, not corporate.
+- ACTION items must start with "ACTION:" prefix`,
+
+  merch: `You are the senior merchandiser advisor for Internet Exports India.
+Your job: keep buyers happy and orders on track.
+
+Rules:
+- GROUP by buyer: for each, list orders and current stage
+- SAMPLES DUE: any due for submission in next 7 days
+- FOLLOW-UPS: orders waiting for buyer approval (PP samples, lab dips)
+- DELAYS TO COMMUNICATE: orders that will miss ship date — draft one-line buyer update
+- Max 250 words.
+- ACTION items must start with "ACTION:" prefix`,
+
+  prod: `You are the production manager advisor for a garment factory.
+Your end-of-day report tells the owner what happened and what to focus on tomorrow.
+
+Rules:
+- TODAY'S OUTPUT: total pieces by stage (cutting/stitching/finishing/packing)
+- QUALITY: top defect types, rejection rate
+- MATERIAL STATUS: any order blocked by missing fabric/trims
+- TOMORROW'S PLAN: which orders to prioritize (nearest ship date + material ready)
+- ALERTS: anything needing immediate attention
+- Max 200 words. Think like a floor supervisor.
+- ACTION items must start with "ACTION:" prefix`
+};
+
+// ── Agent Data Builders ──────────────────────────────────────
+
+function buildCEOData() {
+  const orders = Object.values(db.orders);
+  const today = new Date();
+  const overdue = orders.filter(o => o.exFactoryDate && new Date(o.exFactoryDate) < today);
+  const openFX = (db.fxPositions || []).filter(p => p.status === 'open');
+  const fxByC = {};
+  openFX.forEach(p => { fxByC[p.currency] = (fxByC[p.currency] || 0) + p.amount; });
+  const pendingApprovals = (db.pendingChanges || []).filter(p => p.status === 'pending').length
+    + (db.approvals || []).filter(a => a.status === 'pending').length;
+  const weekReports = (db.agentReports || []).filter(r =>
+    new Date(r.createdAt) > new Date(Date.now() - 7 * 86400000) && r.agentRole !== 'ceo'
+  );
+  return `Orders: ${orders.length} total, ${overdue.length} overdue
+Overdue: ${overdue.slice(0, 10).map(o => `${o.buyer}/${o.styleNo} due ${o.exFactoryDate} val ${o.totalValue} ${o.currency}`).join('; ') || 'None'}
+FX Exposure: ${JSON.stringify(fxByC)}
+Pending approvals: ${pendingApprovals}
+Latest agent summaries: ${weekReports.slice(-7).map(r => `[${r.agentRole}] ${r.content.slice(0, 150)}`).join('\n')}`;
+}
+
+function buildCFOData() {
+  const positions = (db.fxPositions || []).filter(p => p.status === 'open' || p.status === 'partial_hedge');
+  const rates = db.fxRates || [];
+  const current = rates.length ? rates[rates.length - 1] : {};
+  return `Open FX Positions:
+${positions.map(p => `${p.orderId}: ${p.buyer} | ${p.currency} ${p.amount} | FOB ${p.fobRate} | Ship: ${p.shipDate}`).join('\n') || 'None'}
+Current Rates: USD/INR ${current.usd_inr || 'N/A'}, EUR/INR ${current.eur_inr || 'N/A'}, GBP/INR ${current.gbp_inr || 'N/A'}
+30-day History: ${JSON.stringify(rates.slice(-30).map(r => ({ d: r.date, usd: r.usd_inr, eur: r.eur_inr })))}
+Total open positions: ${positions.length}`;
+}
+
+function buildCOOData() {
+  const orders = Object.values(db.orders);
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const weekFromNow = new Date(today.getTime() + 7 * 86400000).toISOString().split('T')[0];
+  const active = orders.filter(o => {
+    const done = ORDER_STAGES.filter(s => o.stages[s.id] && o.stages[s.id].status === 'done').length;
+    return done < ORDER_STAGES.length;
+  });
+  const overdue = orders.filter(o => o.exFactoryDate && o.exFactoryDate < todayStr);
+  const shippingThisWeek = orders.filter(o => o.exFactoryDate && o.exFactoryDate >= todayStr && o.exFactoryDate <= weekFromNow);
+
+  // Bottleneck analysis
+  const stageCounts = {};
+  active.forEach(o => {
+    const current = ORDER_STAGES.find(s => !o.stages[s.id] || o.stages[s.id].status !== 'done');
+    if (current) stageCounts[current.label] = (stageCounts[current.label] || 0) + 1;
+  });
+
+  const pendingApprovals = (db.pendingChanges || []).filter(p => p.status === 'pending').length;
+  const pendingWFApprovals = (db.approvals || []).filter(a => a.status === 'pending').length;
+  const todayProd = (db.dailyProduction || []).filter(e => e.date === todayStr);
+  const todayOutput = todayProd.reduce((s, e) => s + (e.quantityProduced || 0), 0);
+
+  return `Active: ${active.length}, Overdue: ${overdue.length}, Shipping this week: ${shippingThisWeek.length}
+Overdue: ${overdue.slice(0, 5).map(o => `${o.buyer}/${o.styleNo} due ${o.exFactoryDate}`).join('; ') || 'None'}
+Ship this week: ${shippingThisWeek.map(o => `${o.buyer}/${o.styleNo} due ${o.exFactoryDate}`).join('; ') || 'None'}
+Bottleneck stages: ${JSON.stringify(stageCounts)}
+Today's production: ${todayOutput} pcs from ${todayProd.length} entries
+Pending approvals: ${pendingApprovals} stage + ${pendingWFApprovals} workflow
+Shortage alerts: ${(db.defects || []).length > 0 ? db.defects.slice(-5).map(d => d.defectType).join(', ') : 'None'}`;
+}
+
+function buildCTOData() {
+  const totalOrders = Object.keys(db.orders).length;
+  const processedEmails = (db.processedEmailUIDs || []).length;
+  const activityLog = db.activityLog || [];
+  const generalEmails = activityLog.filter(a => a.type === 'general').length;
+  const specificEmails = activityLog.filter(a => a.type !== 'general').length;
+  const dataSize = JSON.stringify(db).length;
+  return `System Status:
+- Orders: ${totalOrders}
+- Processed emails: ${processedEmails}
+- Activity log entries: ${activityLog.length}
+- Email classification: ${specificEmails} specific, ${generalEmails} general (${specificEmails + generalEmails > 0 ? Math.round(specificEmails / (specificEmails + generalEmails) * 100) : 0}% accuracy)
+- Data size: ${(dataSize / 1024).toFixed(0)} KB
+- IMAP configured: orders=${!!EMAIL_PASS}, edp2=${!!(EDP2_EMAIL_USER && EDP2_EMAIL_PASS)}
+- Claude API: ${CLAUDE_API_KEY ? 'configured' : 'NOT configured'}
+- Agent reports stored: ${(db.agentReports || []).length}`;
+}
+
+function buildHRData() {
+  const orders = Object.values(db.orders);
+  const deptWorkload = {};
+  orders.forEach(o => {
+    const current = ORDER_STAGES.find(s => !o.stages[s.id] || o.stages[s.id].status !== 'done');
+    if (current) deptWorkload[current.dept] = (deptWorkload[current.dept] || 0) + 1;
+  });
+  const pendingByUser = {};
+  (db.pendingChanges || []).filter(p => p.status === 'pending').forEach(p => {
+    pendingByUser[p.requestedBy] = (pendingByUser[p.requestedBy] || 0) + 1;
+  });
+  const attendance = (db.activityLog || []).filter(a => a.type === 'attendance');
+  // Check last stage update per department
+  const deptLastUpdate = {};
+  orders.forEach(o => {
+    Object.entries(o.stages).forEach(([sid, stg]) => {
+      if (stg.updatedAt) {
+        const stage = ORDER_STAGES.find(s => s.id === sid);
+        if (stage) {
+          if (!deptLastUpdate[stage.dept] || stg.updatedAt > deptLastUpdate[stage.dept]) {
+            deptLastUpdate[stage.dept] = stg.updatedAt;
+          }
+        }
+      }
+    });
+  });
+  return `Department workload (orders at their stage): ${JSON.stringify(deptWorkload)}
+Pending approvals by requester: ${JSON.stringify(pendingByUser)}
+Attendance emails this week: ${attendance.filter(a => new Date(a.timestamp) > new Date(Date.now() - 7 * 86400000)).length}
+Last stage update by department: ${JSON.stringify(deptLastUpdate)}
+Total registered users: ${db.users.length}`;
+}
+
+function buildMerchData() {
+  const orders = Object.values(db.orders);
+  const byBuyer = {};
+  orders.forEach(o => {
+    const key = o.buyer || 'Unknown';
+    if (!byBuyer[key]) byBuyer[key] = [];
+    const done = ORDER_STAGES.filter(s => o.stages[s.id] && o.stages[s.id].status === 'done').length;
+    const current = ORDER_STAGES.find(s => !o.stages[s.id] || o.stages[s.id].status !== 'done');
+    byBuyer[key].push(`${o.styleNo} (${done}/${ORDER_STAGES.length}) ${current ? current.label : 'Complete'} ship:${o.exFactoryDate || 'N/A'}`);
+  });
+  const samples = (db.samples || []).filter(s => s.status !== 'approved' && s.status !== 'rejected');
+  const todayStr = new Date().toISOString().split('T')[0];
+  const weekFromNow = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+  const samplesDue = samples.filter(s => s.dueDate && s.dueDate >= todayStr && s.dueDate <= weekFromNow);
+  return `Orders by buyer:
+${Object.entries(byBuyer).map(([b, ords]) => `${b}: ${ords.join('; ')}`).join('\n')}
+Active samples: ${samples.length}, Due this week: ${samplesDue.length}
+${samplesDue.map(s => `  ${s.buyer}/${s.styleNo} ${s.type} due ${s.dueDate}`).join('\n')}
+Buyer insights: ${JSON.stringify(computeBuyerInsights()).slice(0, 500)}`;
+}
+
+function buildProdData() {
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayProd = (db.dailyProduction || []).filter(e => e.date === todayStr);
+  const byStage = {};
+  todayProd.forEach(e => {
+    if (!byStage[e.stage]) byStage[e.stage] = { produced: 0, rejected: 0, target: 0 };
+    byStage[e.stage].produced += e.quantityProduced || 0;
+    byStage[e.stage].rejected += e.quantityRejected || 0;
+    byStage[e.stage].target += e.targetQuantity || 0;
+  });
+  const defects = (db.defects || []).filter(d => d.createdAt && d.createdAt.startsWith(todayStr));
+  const defectTypes = {};
+  defects.forEach(d => { defectTypes[d.defectType] = (defectTypes[d.defectType] || 0) + (d.quantity || 1); });
+  // Orders with material ready
+  const orders = Object.values(db.orders);
+  const inProduction = orders.filter(o => {
+    const current = ORDER_STAGES.find(s => !o.stages[s.id] || o.stages[s.id].status !== 'done');
+    return current && ['cutting', 'stitching', 'finishing_qc', 'packing'].includes(current.id);
+  });
+  return `Today's production (${todayStr}):
+${Object.entries(byStage).map(([s, d]) => `${s}: ${d.produced} produced, ${d.rejected} rejected, target ${d.target}`).join('\n') || 'No entries yet'}
+Today's defects: ${JSON.stringify(defectTypes)}
+Orders in production stages: ${inProduction.length}
+${inProduction.slice(0, 10).map(o => {
+  const cur = ORDER_STAGES.find(s => !o.stages[s.id] || o.stages[s.id].status !== 'done');
+  return `  ${o.buyer}/${o.styleNo} qty:${o.quantity} at ${cur ? cur.label : '?'} ship:${o.exFactoryDate || 'N/A'}`;
+}).join('\n')}`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── CHIEF DECISION ENGINE ────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+const DECISION_ENGINE_PROMPT = `You are the Chief Decision Engine for Internet Exports India.
+Your job is NOT to repeat all agent outputs.
+Your job is to FILTER and PRIORITIZE.
+
+You receive:
+- CEO report
+- CFO report
+- COO report
+- CTO report
+- HR report
+- Merchandiser report
+- Production report
+
+YOUR TASK:
+1. Identify TOP 5 ACTIONS for today
+2. Identify TOP 3 RISKS to business
+3. Identify 1 decision that impacts money the most
+4. Ignore low-value information
+
+RULES:
+- Be extremely concise
+- No repetition
+- Only actionable insights
+- Prioritize revenue, shipment delays, and FX risk
+- Each action must be specific (who, what, which order)
+- Each risk must have a dollar/time impact estimate
+
+OUTPUT FORMAT:
+TOP ACTIONS:
+1. [action]
+2. [action]
+3. [action]
+4. [action]
+5. [action]
+
+KEY RISKS:
+1. [risk + estimated impact]
+2. [risk + estimated impact]
+3. [risk + estimated impact]
+
+MOST IMPORTANT DECISION:
+[recommendation + why + estimated financial impact]`;
+
+async function runDecisionEngine() {
+  if (!CLAUDE_API_KEY) { console.log('  🧠 Decision Engine skipped — no API key'); return null; }
+
+  // Gather latest reports from each agent (last 24 hours)
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const recentReports = {};
+  const roles = ['ceo', 'cfo', 'coo', 'cto', 'hr', 'merch', 'prod'];
+  roles.forEach(role => {
+    const latest = (db.agentReports || [])
+      .filter(r => r.agentRole === role && r.createdAt > cutoff)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    recentReports[role] = latest ? latest.content : 'No recent report.';
+  });
+
+  const dataFeed = `AGENT REPORTS:
+
+CEO REPORT:
+${recentReports.ceo}
+
+CFO REPORT:
+${recentReports.cfo}
+
+COO REPORT:
+${recentReports.coo}
+
+CTO REPORT:
+${recentReports.cto}
+
+HR REPORT:
+${recentReports.hr}
+
+MERCHANDISER REPORT:
+${recentReports.merch}
+
+PRODUCTION MANAGER REPORT:
+${recentReports.prod}
+
+ADDITIONAL CONTEXT:
+- Total orders: ${Object.keys(db.orders).length}
+- Open FX positions: ${(db.fxPositions || []).filter(p => p.status === 'open').length}
+- Pending approvals: ${(db.pendingChanges || []).filter(p => p.status === 'pending').length + (db.approvals || []).filter(a => a.status === 'pending').length}
+- Today: ${new Date().toLocaleDateString('en-IN')}`;
+
+  try {
+    const response = await callClaude(DECISION_ENGINE_PROMPT, dataFeed);
+
+    // Parse structured output
+    const actions = [];
+    const risks = [];
+    let decision = '';
+
+    const lines = response.split('\n');
+    let section = '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('TOP ACTIONS:')) { section = 'actions'; continue; }
+      if (trimmed.startsWith('KEY RISKS:')) { section = 'risks'; continue; }
+      if (trimmed.startsWith('MOST IMPORTANT DECISION:')) { section = 'decision'; continue; }
+      if (trimmed.match(/^\d+\.\s+/) && section === 'actions') {
+        actions.push(trimmed.replace(/^\d+\.\s+/, ''));
+      } else if (trimmed.match(/^\d+\.\s+/) && section === 'risks') {
+        risks.push(trimmed.replace(/^\d+\.\s+/, ''));
+      } else if (section === 'decision' && trimmed.length > 0) {
+        decision += (decision ? ' ' : '') + trimmed;
+      }
+    }
+
+    const decisionReport = {
+      id: 'DEC-' + Date.now().toString(36).toUpperCase(),
+      topActions: actions.slice(0, 5),
+      keyRisks: risks.slice(0, 3),
+      mostImportantDecision: decision,
+      fullResponse: response,
+      agentReportsUsed: Object.entries(recentReports).filter(([, v]) => v !== 'No recent report.').map(([k]) => k),
+      createdAt: new Date().toISOString(),
+      acknowledged: false
+    };
+
+    db.decisions.push(decisionReport);
+    if (db.decisions.length > 100) db.decisions = db.decisions.slice(-100);
+    saveData();
+
+    io.emit('decision-update', decisionReport);
+    console.log(`  🧠 Decision Engine: ${actions.length} actions, ${risks.length} risks, decision generated`);
+
+    // Push high-priority notification
+    if (actions.length > 0) {
+      io.emit('notify', {
+        title: '🧠 Decision Engine: Today\'s Priority',
+        body: actions[0],
+        targetDepts: ['all'], fromUser: 'Decision Engine', at: new Date().toISOString()
+      });
+    }
+
+    return decisionReport;
+  } catch (e) {
+    console.error('  🧠 Decision Engine error:', e.message);
+    return null;
+  }
+}
+
+// ── Agent + Decision API Endpoints ──────────────────────────
+
+app.get('/api/agents/reports', (req, res) => {
+  const { role, limit } = req.query;
+  let reports = db.agentReports || [];
+  if (role) reports = reports.filter(r => r.agentRole === role);
+  const l = parseInt(limit) || 50;
+  res.json(reports.slice(-l).reverse());
+});
+
+app.get('/api/agents/reports/latest', (req, res) => {
+  const roles = ['ceo', 'cfo', 'coo', 'cto', 'hr', 'merch', 'prod'];
+  const latest = {};
+  roles.forEach(role => {
+    const report = (db.agentReports || [])
+      .filter(r => r.agentRole === role)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    latest[role] = report || null;
+  });
+  res.json(latest);
+});
+
+app.post('/api/agents/run/:role', async (req, res) => {
+  const { role } = req.params;
+  if (!AGENT_PROMPTS[role]) return res.status(400).json({ error: `Unknown agent role: ${role}` });
+  const builders = { ceo: buildCEOData, cfo: buildCFOData, coo: buildCOOData, cto: buildCTOData, hr: buildHRData, merch: buildMerchData, prod: buildProdData };
+  const report = await runAgent(role, AGENT_PROMPTS[role], builders[role]);
+  if (report) return res.json({ ok: true, report });
+  res.status(500).json({ error: 'Agent run failed — check API key' });
+});
+
+app.put('/api/agents/reports/:id/acknowledge', (req, res) => {
+  const report = (db.agentReports || []).find(r => r.id === req.params.id);
+  if (!report) return res.status(404).json({ error: 'Report not found' });
+  report.acknowledged = true;
+  report.acknowledgedBy = req.body.userName || 'admin';
+  report.acknowledgedAt = new Date().toISOString();
+  saveData();
+  res.json({ ok: true });
+});
+
+// Decision Engine endpoints
+app.get('/api/decision/latest', (req, res) => {
+  const latest = (db.decisions || []).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  res.json(latest || null);
+});
+
+app.get('/api/decision/history', (req, res) => {
+  const limit = parseInt(req.query.limit) || 30;
+  res.json((db.decisions || []).slice(-limit).reverse());
+});
+
+app.post('/api/decision/run', async (req, res) => {
+  const decision = await runDecisionEngine();
+  if (decision) return res.json({ ok: true, decision });
+  res.status(500).json({ error: 'Decision engine failed — check API key or run agents first' });
+});
+
+app.put('/api/decision/:id/acknowledge', (req, res) => {
+  const dec = (db.decisions || []).find(d => d.id === req.params.id);
+  if (!dec) return res.status(404).json({ error: 'Decision not found' });
+  dec.acknowledged = true;
+  dec.acknowledgedBy = req.body.userName || 'admin';
+  dec.acknowledgedAt = new Date().toISOString();
+  saveData();
+  res.json({ ok: true });
+});
+
+// Run all morning agents then decision engine
+async function runMorningBriefing() {
+  console.log('\n  🌅 Running morning briefing...');
+  await runAgent('coo', AGENT_PROMPTS.coo, buildCOOData);
+  await runAgent('cfo', AGENT_PROMPTS.cfo, buildCFOData);
+  await runAgent('merch', AGENT_PROMPTS.merch, buildMerchData);
+  // Wait a moment for reports to save, then run decision engine
+  setTimeout(() => runDecisionEngine(), 3000);
+}
+
+// Run evening production review
+async function runEveningReview() {
+  console.log('\n  🌙 Running evening review...');
+  await runAgent('prod', AGENT_PROMPTS.prod, buildProdData);
+}
+
+// Run weekly strategic review
+async function runWeeklyReview() {
+  console.log('\n  📊 Running weekly strategic review...');
+  await runAgent('ceo', AGENT_PROMPTS.ceo, buildCEOData);
+  await runAgent('hr', AGENT_PROMPTS.hr, buildHRData);
+  await runAgent('cto', AGENT_PROMPTS.cto, buildCTOData);
+  // Deep CFO review on Fridays
+  await runAgent('cfo', AGENT_PROMPTS.cfo, buildCFOData);
+  setTimeout(() => runDecisionEngine(), 5000);
+}
+
+// ── Cron Schedules (IST = UTC+5:30, so 8:30 AM IST = 3:00 UTC) ──
+//    Render/server uses UTC, IST offset is +5:30
+//    8:30 AM IST = 3:00 AM UTC | 6:00 PM IST = 12:30 PM UTC
+//    Monday 9:00 AM IST = Monday 3:30 AM UTC
+
+cron.schedule('0 3 * * *', () => {    // 8:30 AM IST daily — morning briefing
+  runMorningBriefing();
+});
+cron.schedule('30 12 * * *', () => {   // 6:00 PM IST daily — evening review
+  runEveningReview();
+});
+cron.schedule('30 3 * * 1', () => {    // Monday 9:00 AM IST — weekly review
+  runWeeklyReview();
+});
+
+// Fetch FX rates on startup + every 6 hours
+cron.schedule('0 */6 * * *', fetchFXRates);
+
+// ══════════════════════════════════════════════════════════════
+// ── SERVER STARTUP ───────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
 server.listen(PORT, () => {
-  console.log(`\n  Style Tracker running at http://localhost:${PORT}`);
+  console.log(`\n  Style Tracker AI ERP running at http://localhost:${PORT}`);
   console.log(`  Admin PIN: ${db.settings.adminPin} (change this in Admin settings)`);
 
   // Start email checking if configured
@@ -2798,10 +3504,24 @@ server.listen(PORT, () => {
     if (EMAIL_PASS) console.log(`  📧 Inbox 1: ${EMAIL_USER} (every ${EMAIL_CHECK_INTERVAL / 1000}s)`);
     if (EDP2_EMAIL_PASS) console.log(`  📧 Inbox 2: ${EDP2_EMAIL_USER} (every ${EMAIL_CHECK_INTERVAL / 1000}s)`);
     console.log(`  📧 IMAP: ${EMAIL_HOST}:${EMAIL_PORT} TLS=${EMAIL_TLS}`);
-    // Check immediately on startup, then on interval
     setTimeout(checkEmails, 5000);
     setInterval(checkEmails, EMAIL_CHECK_INTERVAL);
   } else {
-    console.log(`  📧 Email checking disabled (set EMAIL_PASS env var to enable)\n`);
+    console.log(`  📧 Email checking disabled (set EMAIL_PASS env var to enable)`);
   }
+
+  // AI Agents
+  if (CLAUDE_API_KEY) {
+    console.log(`  🤖 AI Agents: 7 agents + Decision Engine active`);
+    console.log(`  🤖 Model: ${CLAUDE_MODEL}`);
+    console.log(`  🤖 Schedule: Morning 8:30 AM | Evening 6:00 PM | Weekly Monday 9:00 AM (IST)`);
+  } else {
+    console.log(`  🤖 AI Agents disabled (set CLAUDE_API_KEY env var to enable)`);
+  }
+
+  // Fetch FX rates on startup
+  setTimeout(fetchFXRates, 10000);
+
+  console.log(`  💱 FX Module: ${(db.fxPositions || []).length} positions tracked`);
+  console.log(`  🧠 Decision Engine: ready\n`);
 });

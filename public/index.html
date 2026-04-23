@@ -2739,6 +2739,9 @@ body{
       <button class="tab-btn" data-v="sampling" onclick="sw('sampling')">Sampling</button>
       <button class="tab-btn" data-v="shipments" onclick="sw('shipments')">Shipments</button>
       <button class="tab-btn" data-v="contacts" onclick="sw('contacts')">Contacts</button>
+      <button class="tab-btn" data-v="decision" onclick="sw('decision')" style="background:linear-gradient(135deg,#7c5cfc22,#00d4aa22);border:1px solid #7c5cfc44">🧠 Decisions</button>
+      <button class="tab-btn" data-v="agents" onclick="sw('agents')">🤖 Agents</button>
+      <button class="tab-btn" data-v="fx" onclick="sw('fx')">💱 FX</button>
       <button class="tab-btn" data-v="admin" onclick="sw('admin')" id="adminTab" style="display:none">Admin</button>
     </div>
     <div class="right">
@@ -3578,6 +3581,36 @@ body{
     </div>
   </div>
 
+  <!-- DECISION DASHBOARD -->
+  <div id="decisionView" class="view">
+    <div class="admin-container" style="max-width:800px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="margin:0;color:var(--primary)">🧠 Decision Dashboard</h2>
+        <button onclick="runDecisionEngine()" style="background:var(--primary);color:#fff;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-weight:600">Run Now</button>
+      </div>
+      <div id="decisionContent" style="color:var(--text-secondary)">Loading...</div>
+    </div>
+  </div>
+
+  <!-- AGENT HUB -->
+  <div id="agentsView" class="view">
+    <div class="admin-container" style="max-width:900px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="margin:0;color:var(--primary)">🤖 Agent Hub</h2>
+        <button onclick="runAllAgents()" style="background:var(--primary);color:#fff;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-weight:600">Run All Agents</button>
+      </div>
+      <div id="agentHubContent">Loading...</div>
+    </div>
+  </div>
+
+  <!-- FX DASHBOARD -->
+  <div id="fxView" class="view">
+    <div class="admin-container" style="max-width:900px">
+      <h2 style="color:var(--primary);margin-bottom:16px">💱 FX Exposure</h2>
+      <div id="fxContent">Loading...</div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -4194,6 +4227,9 @@ function sw(v){
   if(v==='sampling')loadSamples();
   if(v==='shipments')loadShipments();
   if(v==='contacts')loadContacts();
+  if(v==='decision')loadDecisionDashboard();
+  if(v==='agents')loadAgentHub();
+  if(v==='fx')loadFXDashboard();
 }
 
 // ═══════════════════════════════════════════
@@ -6110,6 +6146,243 @@ setInterval(() => {
     loadApprovalQueue();
   }
 }, 30000);
+
+// ═══════════════════════════════════════════
+// DECISION DASHBOARD
+// ═══════════════════════════════════════════
+async function loadDecisionDashboard() {
+  const el = document.getElementById('decisionContent');
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">Loading decision data...</div>';
+  try {
+    const resp = await fetch('/api/decision/latest');
+    const dec = await resp.json();
+    if (!dec || !dec.topActions) {
+      el.innerHTML = `
+        <div style="text-align:center;padding:60px 20px">
+          <div style="font-size:48px;margin-bottom:16px">🧠</div>
+          <h3 style="color:var(--text);margin-bottom:8px">No decisions yet</h3>
+          <p style="color:var(--text-secondary);margin-bottom:20px">Run the Decision Engine to get your first briefing.<br>It will analyze all agent reports and give you the top priorities.</p>
+          <button onclick="runDecisionEngine()" style="background:var(--primary);color:#fff;border:none;padding:12px 28px;border-radius:8px;cursor:pointer;font-size:15px;font-weight:600">🧠 Run Decision Engine</button>
+        </div>`;
+      return;
+    }
+    const age = Math.round((Date.now() - new Date(dec.createdAt).getTime()) / 3600000);
+    const ageText = age < 1 ? 'Just now' : age < 24 ? age + 'h ago' : Math.round(age/24) + 'd ago';
+    el.innerHTML = `
+      <div style="margin-bottom:8px;font-size:12px;color:var(--text-secondary)">Last updated: ${ageText} • Based on: ${(dec.agentReportsUsed||[]).join(', ').toUpperCase()}</div>
+
+      <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px">
+        <h3 style="color:#00d4aa;margin:0 0 12px">⚡ TOP 5 ACTIONS</h3>
+        ${(dec.topActions||[]).map((a,i)=>`
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;${i<4?'border-bottom:1px solid var(--border)':''}">
+            <span style="background:var(--primary);color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;flex-shrink:0">${i+1}</span>
+            <span style="font-size:14px;line-height:1.5">${a}</span>
+          </div>`).join('')}
+      </div>
+
+      <div style="background:var(--bg-secondary);border:1px solid #ff446644;border-radius:12px;padding:20px;margin-bottom:16px">
+        <h3 style="color:#ff4466;margin:0 0 12px">⚠️ KEY RISKS</h3>
+        ${(dec.keyRisks||[]).map((r,i)=>`
+          <div style="padding:10px 0;${i<2?'border-bottom:1px solid var(--border)':''}">
+            <span style="color:#ff4466;font-weight:bold">${i+1}.</span> ${r}
+          </div>`).join('')}
+      </div>
+
+      <div style="background:linear-gradient(135deg,#7c5cfc11,#00d4aa11);border:2px solid var(--primary);border-radius:12px;padding:20px">
+        <h3 style="color:var(--primary);margin:0 0 8px">💰 MOST IMPORTANT DECISION</h3>
+        <p style="font-size:15px;line-height:1.6;margin:0">${dec.mostImportantDecision || 'No critical decision at this time.'}</p>
+      </div>
+
+      ${!dec.acknowledged ? `<button onclick="acknowledgeDecision('${dec.id}')" style="margin-top:16px;width:100%;background:var(--primary);color:#fff;border:none;padding:14px;border-radius:8px;cursor:pointer;font-size:15px;font-weight:600">✅ Acknowledge — I've reviewed this</button>` : '<div style="text-align:center;margin-top:16px;color:var(--text-secondary)">✅ Acknowledged by ' + (dec.acknowledgedBy||'admin') + '</div>'}
+    `;
+  } catch(e) {
+    el.innerHTML = '<div style="color:#ff4466;padding:20px">Error loading decisions: ' + e.message + '</div>';
+  }
+}
+
+async function runDecisionEngine() {
+  const el = document.getElementById('decisionContent');
+  el.innerHTML = '<div style="text-align:center;padding:60px"><div style="font-size:36px;animation:spin 1s linear infinite">🧠</div><p style="margin-top:12px;color:var(--text-secondary)">Running Decision Engine...<br>Analyzing all agent reports...</p></div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+  try {
+    const resp = await fetch('/api/decision/run', { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) { loadDecisionDashboard(); }
+    else { el.innerHTML = '<div style="color:#ff4466;padding:20px">Error: ' + (data.error||'Unknown') + '</div>'; }
+  } catch(e) { el.innerHTML = '<div style="color:#ff4466;padding:20px">Error: ' + e.message + '</div>'; }
+}
+
+async function acknowledgeDecision(id) {
+  await fetch('/api/decision/' + id + '/acknowledge', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userName: curUser.name })
+  });
+  loadDecisionDashboard();
+}
+
+// ═══════════════════════════════════════════
+// AGENT HUB
+// ═══════════════════════════════════════════
+const AGENT_META = {
+  ceo: { icon: '🏛️', label: 'CEO', color: '#ffd700' },
+  cfo: { icon: '💰', label: 'CFO', color: '#00d4aa' },
+  coo: { icon: '⚙️', label: 'COO', color: '#7c5cfc' },
+  cto: { icon: '🔧', label: 'CTO', color: '#4488ff' },
+  hr:  { icon: '👥', label: 'HR Head', color: '#ff88aa' },
+  merch: { icon: '🏷️', label: 'Merchandiser', color: '#ffaa00' },
+  prod:  { icon: '🏭', label: 'Production', color: '#ff6644' }
+};
+
+async function loadAgentHub() {
+  const el = document.getElementById('agentHubContent');
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">Loading agents...</div>';
+  try {
+    const resp = await fetch('/api/agents/reports/latest');
+    const latest = await resp.json();
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">';
+    for (const [role, meta] of Object.entries(AGENT_META)) {
+      const report = latest[role];
+      const age = report ? Math.round((Date.now() - new Date(report.createdAt).getTime()) / 3600000) : null;
+      const ageText = age !== null ? (age < 1 ? 'Just now' : age < 24 ? age + 'h ago' : Math.round(age/24) + 'd ago') : 'Never run';
+      const pBadge = report ? (report.priority === 'high' ? '<span style="background:#ff4466;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">HIGH</span>' : report.priority === 'medium' ? '<span style="background:#ffaa00;color:#000;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">WATCH</span>' : '<span style="background:#00cc88;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">OK</span>') : '';
+
+      html += `
+        <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:16px;border-left:4px solid ${meta.color}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:18px">${meta.icon} <strong>${meta.label}</strong></span>
+            ${pBadge}
+          </div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">${ageText}</div>
+          ${report ? `
+            <div style="font-size:13px;line-height:1.5;color:var(--text);max-height:120px;overflow:hidden;margin-bottom:10px" id="agent-${role}-preview">${report.content.split('\n').slice(0,4).join('<br>')}</div>
+            <div style="display:none;font-size:13px;line-height:1.6;color:var(--text);white-space:pre-wrap;margin-bottom:10px" id="agent-${role}-full">${report.content}</div>
+            <div style="display:flex;gap:8px">
+              <button onclick="toggleAgentDetail('${role}')" style="background:none;border:1px solid var(--border);color:var(--primary);padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px" id="agent-${role}-btn">Read More</button>
+              <button onclick="triggerAgent('${role}')" style="background:none;border:1px solid var(--border);color:var(--text-secondary);padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px">↻ Run</button>
+            </div>
+          ` : `
+            <div style="color:var(--text-secondary);font-size:13px;margin-bottom:10px">No report yet</div>
+            <button onclick="triggerAgent('${role}')" style="background:var(--primary);color:#fff;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:12px">Run ${meta.label} Agent</button>
+          `}
+        </div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="color:#ff4466;padding:20px">Error: ' + e.message + '</div>';
+  }
+}
+
+function toggleAgentDetail(role) {
+  const preview = document.getElementById('agent-' + role + '-preview');
+  const full = document.getElementById('agent-' + role + '-full');
+  const btn = document.getElementById('agent-' + role + '-btn');
+  if (full.style.display === 'none') {
+    preview.style.display = 'none'; full.style.display = 'block'; btn.textContent = 'Collapse';
+  } else {
+    preview.style.display = 'block'; full.style.display = 'none'; btn.textContent = 'Read More';
+  }
+}
+
+async function triggerAgent(role) {
+  try {
+    const resp = await fetch('/api/agents/run/' + role, { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) loadAgentHub();
+    else alert('Error: ' + (data.error || 'Failed'));
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function runAllAgents() {
+  const el = document.getElementById('agentHubContent');
+  el.innerHTML = '<div style="text-align:center;padding:60px"><div style="font-size:36px;animation:spin 1s linear infinite">🤖</div><p style="margin-top:12px;color:var(--text-secondary)">Running all 7 agents...<br>This takes 30-60 seconds</p></div>';
+  const roles = ['coo', 'cfo', 'merch', 'prod', 'ceo', 'hr', 'cto'];
+  for (const role of roles) {
+    try { await fetch('/api/agents/run/' + role, { method: 'POST' }); } catch(e) {}
+  }
+  loadAgentHub();
+}
+
+// ═══════════════════════════════════════════
+// FX DASHBOARD
+// ═══════════════════════════════════════════
+async function loadFXDashboard() {
+  const el = document.getElementById('fxContent');
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">Loading FX data...</div>';
+  try {
+    const [summResp, posResp, rateResp] = await Promise.all([
+      fetch('/api/fx/summary'),
+      fetch('/api/fx/positions?status=open'),
+      fetch('/api/fx/rates?days=7')
+    ]);
+    const summary = await summResp.json();
+    const positions = await posResp.json();
+    const rates = await rateResp.json();
+
+    const latestRate = summary.latestRates || {};
+
+    let html = '';
+
+    // Summary cards
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px">';
+    if (summary.summary && summary.summary.length > 0) {
+      summary.summary.forEach(s => {
+        html += `
+          <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:18px;text-align:center">
+            <div style="font-size:24px;font-weight:bold;color:var(--primary)">${s.currency} ${s.totalAmount.toLocaleString()}</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${s.positions} positions</div>
+            ${s.currentRate ? `<div style="font-size:13px;color:var(--text);margin-top:8px">Rate: ₹${s.currentRate}</div><div style="font-size:13px;color:#00d4aa">≈ ₹${s.totalINR.toLocaleString()}</div>` : ''}
+          </div>`;
+      });
+    } else {
+      html += '<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-secondary)">No open FX positions. Positions are auto-created when orders have foreign currency values.</div>';
+    }
+    // Rate card
+    if (latestRate.date) {
+      html += `
+        <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:18px;text-align:center">
+          <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">Latest Rates (${latestRate.date})</div>
+          ${latestRate.usd_inr ? `<div>USD/INR: <strong>₹${latestRate.usd_inr}</strong></div>` : ''}
+          ${latestRate.eur_inr ? `<div>EUR/INR: <strong>₹${latestRate.eur_inr}</strong></div>` : ''}
+          ${latestRate.gbp_inr ? `<div>GBP/INR: <strong>₹${latestRate.gbp_inr}</strong></div>` : ''}
+        </div>`;
+    }
+    html += '</div>';
+
+    // Positions table
+    if (positions.length > 0) {
+      html += '<h3 style="color:var(--text);margin-bottom:10px">Open Positions</h3>';
+      html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
+      html += '<tr style="background:var(--bg-secondary);text-align:left"><th style="padding:10px;border-bottom:1px solid var(--border)">Order</th><th style="padding:10px;border-bottom:1px solid var(--border)">Buyer</th><th style="padding:10px;border-bottom:1px solid var(--border)">Currency</th><th style="padding:10px;border-bottom:1px solid var(--border)">Amount</th><th style="padding:10px;border-bottom:1px solid var(--border)">Ship Date</th><th style="padding:10px;border-bottom:1px solid var(--border)">Status</th></tr>';
+      positions.forEach(p => {
+        const statusColor = p.hedged ? '#00cc88' : '#ffaa00';
+        html += `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:10px">${p.styleNo || p.orderId}</td>
+          <td style="padding:10px">${p.buyer}</td>
+          <td style="padding:10px"><strong>${p.currency}</strong></td>
+          <td style="padding:10px">${p.amount.toLocaleString()}</td>
+          <td style="padding:10px">${p.shipDate || 'N/A'}</td>
+          <td style="padding:10px"><span style="color:${statusColor};font-weight:600">${p.hedged ? 'Hedged @' + p.hedgeRate : 'Open'}</span></td>
+        </tr>`;
+      });
+      html += '</table></div>';
+    }
+
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="color:#ff4466;padding:20px">Error: ' + e.message + '</div>';
+  }
+}
+
+// Listen for real-time agent + decision updates
+socket.on('agent-report', () => {
+  if (document.getElementById('agentsView').classList.contains('active')) loadAgentHub();
+});
+socket.on('decision-update', () => {
+  if (document.getElementById('decisionView').classList.contains('active')) loadDecisionDashboard();
+});
+socket.on('fx-position-created', () => {
+  if (document.getElementById('fxView').classList.contains('active')) loadFXDashboard();
+});
 </script>
 
 </body>
